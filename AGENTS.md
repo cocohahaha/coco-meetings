@@ -69,6 +69,11 @@ For an end-to-end check, ask the user for a short audio/video file and run
 
 ## 4. Things to know
 
+- **Importing finished transcripts**: besides audio/video, the user can drop in a
+  transcript already produced elsewhere (`.txt`, `.md`, `.srt`, `.vtt`, or Whisper-style
+  `.json`) via Upload, drag-drop, Local path, or `./bin/coco transcribe file.srt`. It is
+  imported without re-transcribing, and every analysis feature works on it. Subtitle and
+  JSON timestamps are preserved as `[mm:ss]` lines.
 - **Languages**: the UI is English/French (top-bar switch). Transcription auto-detects
   the spoken language; AI analysis answers in the meeting's language. To force a
   transcription language: `./bin/coco config language fr` (or `en`, `zh`, …).

@@ -12,6 +12,9 @@ from .config import LIBRARY_DIR, TRASH_DIR, ensure_dirs
 AUDIO_EXTS = {".m4a", ".mp3", ".wav", ".aiff", ".aif", ".flac", ".ogg",
               ".opus", ".webm", ".mp4", ".mov", ".mkv", ".amr", ".wma"}
 
+# Already-finished transcripts exported from other tools, imported without re-transcribing.
+TRANSCRIPT_EXTS = {".txt", ".md", ".markdown", ".srt", ".vtt", ".json"}
+
 
 def _slug(title: str) -> str:
     s = re.sub(r"[\\/:*?\"<>|\s]+", "-", title.strip())

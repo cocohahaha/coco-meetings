@@ -36,13 +36,18 @@ cd coco
 Whisper model (the default `turbo` model is ~1.5GB, `large` ~3GB). You can also
 double-click `coco.command` in Finder instead of using the terminal.
 
-Three ways to import audio in the web UI: **drag a file into the window**, the "Upload
-audio" button (multi-select), or "Local path" (paste a file or a folder — a folder
-imports everything inside it as a batch). Files queue up and finish one by one.
-Transcripts, reports and daily briefs all download as `.md`.
+Three ways to add a meeting in the web UI: **drag a file into the window**, the "Upload"
+button (multi-select), or "Local path" (paste a file, or a folder to batch-import
+everything inside it). Audio and video are transcribed locally; an already-finished
+transcript exported from another tool (`.txt`, `.md`, `.srt`, `.vtt`, or Whisper-style
+`.json`) is imported as-is, with no re-transcription. Files queue up and finish one by
+one. Transcripts, reports and daily briefs all download as `.md`.
 
 ## Features
 
+- **Import or record** : transcribe audio/video locally, or bring in a finished
+  transcript from another tool (`.txt`, `.md`, `.srt`, `.vtt`, or Whisper-style `.json`)
+  and run all the same analysis on it. Subtitle and JSON timestamps are kept.
 - **Transcript view** — edit the text in place (later AI analysis uses your edited
   version), or run **AI proofread** to fix recognition errors, proper nouns and
   punctuation without rewriting content (the raw machine transcript is backed up to

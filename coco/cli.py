@@ -10,8 +10,9 @@ from pathlib import Path
 
 from . import ai
 from .config import MEMORY_FILE, ensure_dirs, load_config, save_config
-from .library import (AUDIO_EXTS, create_meeting, delete_meeting,
-                      find_meeting, list_meetings, search_library)
+from .ingest import import_transcript_file
+from .library import (AUDIO_EXTS, TRANSCRIPT_EXTS, create_meeting,
+                      delete_meeting, find_meeting, list_meetings, search_library)
 from .recorder import list_devices, record_blocking
 from .templates import TEMPLATES
 from .transcriber import transcribe_meeting
@@ -41,6 +42,19 @@ def cmd_transcribe(args):
             _p(f"✗ File not found: {src}")
             continue
         title = args.title or src.stem
+        if src.suffix.lower() in TRANSCRIPT_EXTS:
+            try:
+                mtg = import_transcript_file(src, title, source="transcript import")
+            except (ValueError, UnicodeError) as e:
+                _p(f"✗ Could not import transcript {src.name}: {e}")
+                continue
+            _p(f"✓ Transcript imported → {mtg.transcript_md}")
+            if load_config().get("auto_memory", True):
+                try:
+                    ai.update_longterm(mtg)
+                except ai.AIError as e:
+                    _p(f"  (memory extraction skipped: {e})")
+            continue
         mtg = create_meeting(title, audio_path=src, source="import", move=args.move)
         _p(f"▶ Imported: {mtg.id}")
         transcribe_meeting(mtg, model=args.model, progress=_p)
@@ -259,7 +273,7 @@ def main(argv=None):
     p.add_argument("--device", help="ffmpeg audio device, e.g. :0")
     p.set_defaults(func=cmd_record)
 
-    p = sub.add_parser("transcribe", help="import audio/video file(s) and transcribe")
+    p = sub.add_parser("transcribe", help="transcribe audio/video, or import a finished transcript (.txt/.md/.srt/.vtt/.json)")
     p.add_argument("files", nargs="+")
     p.add_argument("--title", help="meeting title (defaults to the file name)")
     p.add_argument("--model", help="whisper model: turbo (default) / large")

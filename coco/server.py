@@ -19,8 +19,9 @@ from . import ai
 from .config import (BRIEFS_DIR, LONGTERM_FILE, LONGTERM_PLACEHOLDER,
                      MEMORY_FILE, MEMORY_PLACEHOLDER, TRACKING_DIR, TRASH_DIR,
                      ensure_dirs, load_config, save_config)
-from .library import (AUDIO_EXTS, Meeting, create_meeting, delete_meeting,
-                      find_meeting, list_meetings, search_library)
+from .ingest import import_transcript_file
+from .library import (AUDIO_EXTS, TRANSCRIPT_EXTS, Meeting, create_meeting,
+                      delete_meeting, find_meeting, list_meetings, search_library)
 from .recorder import Recorder
 from .templates import TEMPLATES
 from .transcriber import transcribe_meeting
@@ -73,6 +74,20 @@ def _start_transcribe_job(mtg: Meeting, model: str | None = None) -> str:
 
     threading.Thread(target=work, daemon=True).start()
     return jid
+
+
+def _kick_memory(mtg: Meeting) -> None:
+    """Run long-term memory extraction in the background, as after a transcription."""
+    if not load_config().get("auto_memory", True):
+        return
+
+    def work():
+        try:
+            ai.update_longterm(mtg)
+        except Exception as e:  # memory failure must not affect the imported transcript
+            mtg.save_meta(memory_error=str(e))
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 @app.on_event("startup")
@@ -148,15 +163,26 @@ def api_search(q: str = ""):
 async def api_upload(file: UploadFile = File(...), title: str = Form(""),
                      model: str = Form("")):
     suffix = Path(file.filename or "audio").suffix.lower()
+    ensure_dirs()
+    name = title or Path(file.filename or "untitled").stem
+    if suffix in TRANSCRIPT_EXTS:
+        tmp = Path("/tmp") / f"coco_upload_{uuid.uuid4().hex[:6]}{suffix}"
+        tmp.write_bytes(await file.read())
+        try:
+            mtg = import_transcript_file(tmp, name, source="transcript upload")
+        except (ValueError, UnicodeError) as e:
+            _err(e)
+        finally:
+            tmp.unlink(missing_ok=True)
+        _kick_memory(mtg)
+        return {"meeting_id": mtg.id, "job": None, "kind": "transcript"}
     if suffix not in AUDIO_EXTS:
         _err(ValueError(f"Unsupported file type: {suffix}"))
-    ensure_dirs()
     tmp = Path("/tmp") / f"coco_upload_{uuid.uuid4().hex[:6]}{suffix}"
     tmp.write_bytes(await file.read())
-    mtg = create_meeting(title or Path(file.filename).stem,
-                         audio_path=tmp, source="upload", move=True)
+    mtg = create_meeting(name, audio_path=tmp, source="upload", move=True)
     jid = _start_transcribe_job(mtg, model or None)
-    return {"meeting_id": mtg.id, "job": jid}
+    return {"meeting_id": mtg.id, "job": jid, "kind": "audio"}
 
 
 class ImportBody(BaseModel):
@@ -165,28 +191,49 @@ class ImportBody(BaseModel):
     model: str = ""
 
 
+IMPORTABLE_EXTS = AUDIO_EXTS | TRANSCRIPT_EXTS
+
+
 @app.post("/api/import")
 def api_import(body: ImportBody):
-    """Import a local file or folder (a folder imports every audio/video inside it)."""
+    """Import a local file or folder. Audio/video is transcribed; an already-finished
+    transcript (.txt/.md/.srt/.vtt/.json) is imported directly. A folder imports all of
+    them, including a mix."""
     p = Path(body.path.strip().strip("'\"")).expanduser()
     if not p.exists():
         _err(FileNotFoundError(f"Path does not exist: {p}"))
     if p.is_dir():
         files = [f for f in sorted(p.iterdir())
-                 if f.suffix.lower() in AUDIO_EXTS and not f.name.startswith(".")]
+                 if f.suffix.lower() in IMPORTABLE_EXTS and not f.name.startswith(".")]
         if not files:
-            _err(ValueError(f"No recognizable audio/video files in the folder: {p}"))
+            _err(ValueError(f"No audio/video or transcript files in the folder: {p}"))
     else:
-        if p.suffix.lower() not in AUDIO_EXTS:
+        if p.suffix.lower() not in IMPORTABLE_EXTS:
             _err(ValueError(f"Unsupported file type: {p.suffix}"))
         files = [p]
     ensure_dirs()
-    imported = []
+    single = len(files) == 1
+    imported, errors = [], []
     for f in files:
-        mtg = create_meeting(body.title if (body.title and len(files) == 1) else f.stem,
-                             audio_path=f, source="local import")
-        imported.append({"meeting_id": mtg.id,
-                         "job": _start_transcribe_job(mtg, body.model or None)})
+        name = body.title if (body.title and single) else f.stem
+        if f.suffix.lower() in TRANSCRIPT_EXTS:
+            try:
+                mtg = import_transcript_file(f, name, source="transcript import")
+            except (ValueError, UnicodeError) as e:
+                errors.append(f"{f.name}: {e}")  # skip this one, keep importing the rest
+                continue
+            _kick_memory(mtg)
+            imported.append({"meeting_id": mtg.id, "job": None, "kind": "transcript"})
+        else:
+            mtg = create_meeting(name, audio_path=f, source="local import")
+            imported.append({"meeting_id": mtg.id,
+                             "job": _start_transcribe_job(mtg, body.model or None),
+                             "kind": "audio"})
+    if not imported:
+        detail = "Nothing could be imported"
+        if errors:
+            detail += " (" + "; ".join(errors[:3]) + ")"
+        _err(ValueError(detail))
     return {"imported": imported, "count": len(imported)}
 
 

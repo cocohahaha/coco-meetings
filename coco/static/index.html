@@ -222,7 +222,7 @@
   <button id="btn-brief"></button>
   <button id="btn-export"></button>
   <button id="btn-memory"></button>
-  <input type="file" id="file-input" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.aiff,.flac,.ogg,.mp4,.mov,.webm,.amr">
+  <input type="file" id="file-input" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.aiff,.flac,.ogg,.mp4,.mov,.webm,.amr,.txt,.md,.markdown,.srt,.vtt,.json,text/plain">
 </header>
 
 <main>
@@ -306,7 +306,7 @@ const I18N = {
   en: {
     appTagline: 'local meeting assistant',
     modelTurbo: 'Model: turbo (fast)', modelLarge: 'Model: large (most accurate)',
-    btnUpload: '↑ Upload audio', btnImport: '⌖ Local path', btnTrack: '⛓ Track',
+    btnUpload: '↑ Upload', btnImport: '⌖ Local path', btnTrack: '⛓ Track',
     btnBrief: '☀ Daily brief', btnExport: '⬇ Export', btnMemory: '◈ Memory',
     searchPlaceholder: '🔍 Search all transcripts and reports…',
     filterFrom: 'Start date (inclusive)', filterTo: 'End date (inclusive)', filterClear: 'Clear',
@@ -314,7 +314,7 @@ const I18N = {
     selCount: 'Selected: {0}', selCountHidden: 'Selected: {0} ({1} hidden by date filter)',
     listEmpty: 'Nothing here yet', listNoRange: 'No meetings in the selected date range',
     noMatches: 'No matches', loading: 'Loading…',
-    emptyState: 'No meeting selected yet<br>Drag an audio file <b>into the window</b>, or use the "Upload audio" / "Local path" buttons at the top right.<br>Open it on the left once transcription is done. The local path also accepts a folder (batch import).',
+    emptyState: 'No meeting selected yet<br>Drag a file <b>into the window</b>, or use the "Upload" / "Local path" buttons at the top right. Audio is transcribed; an existing transcript (.txt, .md, .srt, .vtt, .json) is imported as-is.<br>Open it on the left once it is ready. The local path also accepts a folder (batch import).',
     chatSection: 'Chat with coco',
     chatGreeting: "Hi, I'm coco. Pick a meeting on the left and ask me anything about that conversation: decisions, mood, action items, hidden disagreements… Tick \"across all meetings\" to ask cross-session questions, like how someone's position changed over time.",
     chatAllLabel: 'Ask across all meetings (commitments, changes, comparisons…)',
@@ -340,6 +340,7 @@ const I18N = {
     delReportConfirm: 'Delete the report "{0}"? It moves to trash library/_trash (recoverable), and you can regenerate it anytime.',
     reportDeleted: 'Report deleted (recoverable from trash)', deleteFailed: 'Delete failed: ',
     uploading: 'Uploading {0}…', uploadQueued: '{0} added, transcription queued…', uploadFailed: '{0} upload failed: ',
+    transcriptImported: 'Transcript "{0}" imported',
     importPrompt: 'Paste the full path of an audio/video file, or a folder path (batch import):',
     imported: 'Imported {0} file(s), transcription queued…', importFailed: 'Import failed: ',
     transcribeDone: 'Transcription done', transcribeFailed: 'Transcription failed: ',
@@ -419,6 +420,7 @@ const I18N = {
     delReportConfirm: 'Supprimer le rapport « {0} » ? Il va à la corbeille library/_trash (récupérable) et peut être régénéré à tout moment.',
     reportDeleted: 'Rapport supprimé (récupérable depuis la corbeille)', deleteFailed: 'Échec de la suppression : ',
     uploading: 'Import de {0}…', uploadQueued: '{0} ajouté, transcription en file…', uploadFailed: 'Échec de l\'import de {0} : ',
+    transcriptImported: 'Transcription « {0} » importée',
     importPrompt: 'Collez le chemin complet d\'un fichier audio/vidéo, ou un chemin de dossier (import par lot) :',
     imported: '{0} fichier(s) importé(s), transcription en file…', importFailed: 'Échec de l\'import : ',
     transcribeDone: 'Transcription terminée', transcribeFailed: 'Échec de la transcription : ',
@@ -971,8 +973,14 @@ async function uploadFiles(files) {
     toast(t('uploading', f.name));
     try {
       const r = await api('/api/upload', { method: 'POST', body: fd });
-      toast(t('uploadQueued', f.name));
-      watchJob(r.job, r.meeting_id);
+      if (r.kind === 'transcript' || !r.job) {
+        toast(t('transcriptImported', f.name));
+        await loadMeetings();
+        openMeeting(r.meeting_id);
+      } else {
+        toast(t('uploadQueued', f.name));
+        watchJob(r.job, r.meeting_id);
+      }
     } catch (err) { toast(t('uploadFailed', f.name) + err.message, 6000); }
   }
 }
@@ -995,7 +1003,9 @@ $('btn-import').onclick = async () => {
       body: JSON.stringify({ path }),
     });
     toast(t('imported', r.count));
-    r.imported.forEach(it => watchJob(it.job, it.meeting_id));
+    r.imported.forEach(it => { if (it.job) watchJob(it.job, it.meeting_id); });
+    const firstTranscript = r.imported.find(it => !it.job);
+    if (firstTranscript) { await loadMeetings(); openMeeting(firstTranscript.meeting_id); }
   } catch (e) { toast(t('importFailed') + e.message, 8000); }
 };
 
