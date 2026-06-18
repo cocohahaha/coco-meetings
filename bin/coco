@@ -1,0 +1,11 @@
+#!/bin/zsh
+# coco launcher: runs the package with the project's own virtualenv,
+# bootstrapping it on first use.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ ! -x "$ROOT/.venv/bin/python" ]; then
+  echo "First run: creating a virtual environment and installing dependencies…" >&2
+  python3 -m venv "$ROOT/.venv"
+  "$ROOT/.venv/bin/pip" install --upgrade pip >/dev/null
+  "$ROOT/.venv/bin/pip" install -r "$ROOT/requirements.txt"
+fi
+exec env PYTHONPATH="$ROOT" "$ROOT/.venv/bin/python" -m coco "$@"

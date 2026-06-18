@@ -1,0 +1,111 @@
+"""ffmpeg microphone recording (macOS avfoundation).
+
+To capture system audio (the other side of a call) you need a virtual audio
+device such as BlackHole; then run `coco devices` to find its index and set
+audio_device in the config.
+"""
+from __future__ import annotations
+
+import signal
+import subprocess
+import time
+from pathlib import Path
+
+from .config import load_config
+
+
+def list_devices() -> str:
+    """Return the ffmpeg avfoundation device list (human-readable text)."""
+    proc = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-f", "avfoundation",
+         "-list_devices", "true", "-i", ""],
+        capture_output=True, text=True,
+    )
+    lines = [l for l in proc.stderr.splitlines() if "AVFoundation" in l]
+    return "\n".join(lines) or proc.stderr
+
+
+def _ffmpeg_cmd(out: Path, device: str) -> list[str]:
+    # 16kHz mono wav: Whisper's native input format; safe even if interrupted
+    return [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-f", "avfoundation", "-i", device,
+        "-ac", "1", "-ar", "16000", "-y", str(out),
+    ]
+
+
+class Recorder:
+    """Recording-process manager for the web server (one recording at a time)."""
+
+    def __init__(self):
+        self.proc: subprocess.Popen | None = None
+        self.out: Path | None = None
+        self.started_at: float = 0
+        self.title: str = ""
+
+    @property
+    def active(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self, out: Path, title: str, device: str | None = None) -> None:
+        if self.active:
+            raise RuntimeError("A recording is already in progress")
+        device = device or load_config()["audio_device"]
+        self.proc = subprocess.Popen(
+            _ffmpeg_cmd(out, device),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(1.0)  # give ffmpeg a moment to start so device errors surface immediately
+        if self.proc.poll() is not None:
+            err = (self.proc.stderr.read() or b"").decode(errors="ignore")
+            self.proc = None
+            raise RuntimeError(f"ffmpeg failed to start: {err.strip() or 'unknown error'}\n"
+                               "Tip: the first recording needs microphone permission for your "
+                               "terminal in System Settings; run `coco devices` to list inputs")
+        self.out = out
+        self.title = title
+        self.started_at = time.time()
+
+    def stop(self) -> Path:
+        if not self.active:
+            raise RuntimeError("No recording is in progress")
+        self.proc.send_signal(signal.SIGINT)
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+        out = self.out
+        self.proc, self.out = None, None
+        if not out.exists() or out.stat().st_size < 1024:
+            raise RuntimeError("Recording file is empty — check microphone permission and input device")
+        return out
+
+    def elapsed(self) -> int:
+        return int(time.time() - self.started_at) if self.active else 0
+
+
+def record_blocking(out: Path, device: str | None = None) -> Path:
+    """For the CLI: foreground recording until Ctrl+C."""
+    device = device or load_config()["audio_device"]
+    proc = subprocess.Popen(_ffmpeg_cmd(out, device), stdin=subprocess.DEVNULL)
+    start = time.time()
+    try:
+        while proc.poll() is None:
+            mins, secs = divmod(int(time.time() - start), 60)
+            print(f"\r⏺ Recording {mins:02d}:{secs:02d} (Ctrl+C to stop)", end="", flush=True)
+            time.sleep(1)
+        raise RuntimeError("ffmpeg exited early — on first use allow terminal microphone "
+                           "access, or check the input device with `coco devices`")
+    except KeyboardInterrupt:
+        proc.send_signal(signal.SIGINT)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    print()
+    if not out.exists() or out.stat().st_size < 1024:
+        raise RuntimeError("Recording file is empty — check microphone permission and input device")
+    return out

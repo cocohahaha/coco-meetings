@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>coco · local meeting assistant</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #ffffff; --ink: #26241f; --muted: #8a857c;
+    --line: #e8e5df; --accent: #1f6f5c; --accent-ink: #ffffff;
+    --rec: #c0392b; --soft: #f0eee9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", "PingFang SC", sans-serif;
+    background: var(--bg); color: var(--ink); height: 100vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px; background: var(--panel);
+    border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
+  header h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  .spacer { flex: 1; }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 14px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    color: var(--ink); transition: all .15s;
+  }
+  button:hover { border-color: var(--ink); }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.recording { background: var(--rec); color: #fff; border-color: var(--rec); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .65; } }
+  button:disabled { opacity: .4; cursor: default; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* left: library */
+  #sidebar {
+    width: 270px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--line); overflow-y: auto; padding: 10px;
+  }
+  #sidebar .section { font-size: 11px; color: var(--muted); letter-spacing: 1px;
+    padding: 8px 8px 6px; text-transform: uppercase; }
+  .mtg {
+    padding: 9px 26px 9px 10px; border-radius: 8px; cursor: pointer;
+    margin-bottom: 2px; position: relative;
+  }
+  .mtg:hover { background: var(--soft); }
+  .mtg.active { background: var(--ink); color: #fff; }
+  .mtg .t { font-size: 13px; font-weight: 500; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mtg .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .mtg.active .s { color: #cfcbc4; }
+  .mtg .del { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    display: none; border: none; background: none; color: var(--muted);
+    font-size: 13px; padding: 4px 6px; border-radius: 6px; }
+  .mtg:hover .del { display: block; }
+  .mtg .del:hover { color: var(--rec); background: rgba(192,57,43,.08); border: none; }
+  .mtg.active .del { color: #cfcbc4; }
+  .mtg .hit { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.5;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mtg .hit i { color: var(--accent); font-style: normal; }
+  #search-box { width: 100%; font: inherit; font-size: 13px; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+    margin: 4px 0 6px; }
+  #search-box:focus { outline: none; border-color: var(--ink); }
+
+  /* center */
+  #content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #mtg-head { padding: 16px 24px 0; flex-shrink: 0; }
+  #mtg-head h2 { font-size: 19px; font-weight: 600; }
+  #mtg-head .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  #tabs { display: flex; gap: 4px; padding: 12px 24px 0; border-bottom: 1px solid var(--line);
+    flex-shrink: 0; flex-wrap: wrap; align-items: center; }
+  .tab { padding: 7px 14px; font-size: 13px; cursor: pointer; border-radius: 8px 8px 0 0;
+    color: var(--muted); border: 1px solid transparent; border-bottom: none; }
+  .tab.active { color: var(--ink); background: var(--bg); border-color: var(--line); font-weight: 500; }
+  #report-actions { margin-left: auto; display: flex; gap: 8px; padding-bottom: 8px;
+    flex-wrap: nowrap; align-items: center; }
+  #report-actions button, #report-actions select { white-space: nowrap; flex-shrink: 0; }
+  #tpl-select { max-width: 240px; }
+  select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--panel); }
+  #doc { flex: 1; overflow-y: auto; padding: 20px 28px 60px; }
+  #doc .md { max-width: 780px; line-height: 1.75; font-size: 14px; }
+
+  /* markdown */
+  .md h1 { font-size: 20px; margin: 18px 0 10px; }
+  .md h2 { font-size: 16px; margin: 18px 0 8px; }
+  .md h3 { font-size: 14px; margin: 14px 0 6px; }
+  .md p { margin: 8px 0; }
+  .md ul, .md ol { margin: 8px 0 8px 22px; }
+  .md li { margin: 3px 0; }
+  .md table { border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  .md th { background: var(--soft); }
+  .md code { background: var(--soft); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .md .ts { color: var(--accent); font-size: 12px; font-family: ui-monospace, monospace; }
+  .md blockquote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--muted); margin: 8px 0; }
+
+  /* transcript editor */
+  #edit-area { width: 100%; height: 72vh; font: 13px/1.8 ui-monospace, monospace;
+    padding: 14px; border: 1px solid var(--line); border-radius: 10px; resize: vertical;
+    background: var(--panel); }
+  #edit-area:focus { outline: none; border-color: var(--ink); }
+
+  /* right: chat */
+  #chat {
+    width: 360px; flex-shrink: 0; background: var(--panel);
+    border-left: 1px solid var(--line); display: flex; flex-direction: column;
+  }
+  #chat .section { font-size: 11px; color: var(--muted); letter-spacing: 1px;
+    padding: 14px 16px 6px; text-transform: uppercase; flex-shrink: 0; }
+  #chat-log { flex: 1; overflow-y: auto; padding: 6px 16px; }
+  .bubble { margin: 8px 0; font-size: 13px; line-height: 1.65; }
+  .bubble.user { background: var(--ink); color: #fff; border-radius: 12px 12px 2px 12px;
+    padding: 8px 12px; margin-left: 40px; }
+  .bubble.coco { background: var(--soft); border-radius: 12px 12px 12px 2px;
+    padding: 10px 12px; margin-right: 16px; }
+  .bubble.coco.thinking { color: var(--muted); font-style: italic; }
+  #chat-ref { font-size: 11px; color: var(--muted); padding: 4px 16px; flex-shrink: 0; }
+  #chat-input-row { display: flex; gap: 8px; padding: 10px 16px 14px; flex-shrink: 0;
+    border-top: 1px solid var(--line); }
+  #chat-input { flex: 1; font: inherit; font-size: 13px; padding: 9px 12px;
+    border: 1px solid var(--line); border-radius: 10px; resize: none; height: 40px;
+    background: var(--bg); }
+  #chat-input:focus { outline: none; border-color: var(--ink); }
+
+  /* overlays */
+  #overlay { position: fixed; inset: 0; background: rgba(38,36,31,.45);
+    display: none; align-items: center; justify-content: center; z-index: 10; }
+  #overlay.show { display: flex; }
+  #modal { background: var(--panel); border-radius: 14px; width: 620px; max-width: 92vw;
+    max-height: 84vh; display: flex; flex-direction: column; padding: 20px; }
+  #modal h3 { font-size: 15px; margin-bottom: 10px; }
+  #mem-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  #mem-tabs button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #mem-hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  #chat-opts { font-size: 12px; color: var(--muted); padding: 2px 16px 4px;
+    flex-shrink: 0; user-select: none; }
+  #chat-opts label { cursor: pointer; }
+  #modal textarea { flex: 1; min-height: 320px; font: 13px/1.6 ui-monospace, monospace;
+    padding: 12px; border: 1px solid var(--line); border-radius: 10px; resize: vertical; }
+  #modal .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 10px;
+    font-size: 13px; display: none; z-index: 20; max-width: 70vw; }
+  #empty { color: var(--muted); padding: 60px; text-align: center; font-size: 14px; line-height: 2; }
+  input[type=file] { display: none; }
+
+  /* sidebar: filter + selection */
+  #filter-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+    padding: 2px 2px 6px; font-size: 12px; color: var(--muted); }
+  #filter-bar input[type=date] { font: inherit; font-size: 11px; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--ink); }
+  #filter-bar .sep { color: var(--muted); }
+  #filter-bar .lk { cursor: pointer; color: var(--accent); margin-left: auto; padding: 2px 4px; }
+  #filter-bar .lk:hover { text-decoration: underline; }
+  #sel-bar { display: none; align-items: center; gap: 6px; padding: 6px 6px;
+    margin: 2px 0 6px; background: var(--soft); border-radius: 8px; font-size: 12px; }
+  #sel-bar.show { display: flex; }
+  #sel-bar .cnt { color: var(--muted); flex: 1; }
+  #sel-bar button { padding: 5px 10px; font-size: 12px; }
+  .mtg { display: flex; align-items: flex-start; gap: 8px; }
+  .mtg .sel { margin-top: 3px; flex-shrink: 0; width: 15px; height: 15px;
+    accent-color: var(--accent); cursor: pointer; }
+  .mtg .body { flex: 1; min-width: 0; }
+  .mtg.active .body .date-edit { color: var(--ink); }
+  .mtg .s .date { cursor: pointer; border-bottom: 1px dashed transparent; }
+  .mtg:hover .s .date { border-bottom-color: var(--muted); }
+  .mtg .date-edit { font: inherit; font-size: 11px; padding: 1px 4px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); color: var(--ink); }
+
+  /* export modal */
+  #export-overlay { position: fixed; inset: 0; background: rgba(38,36,31,.45);
+    display: none; align-items: center; justify-content: center; z-index: 11; }
+  #export-overlay.show { display: flex; }
+  #export-modal { background: var(--panel); border-radius: 14px; width: 560px; max-width: 92vw;
+    max-height: 84vh; display: flex; flex-direction: column; padding: 20px; }
+  #export-modal h3 { font-size: 15px; margin-bottom: 4px; }
+  #export-modal .hint { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  #export-list { flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px;
+    padding: 6px; min-height: 200px; }
+  #export-list .grp { margin-bottom: 4px; }
+  #export-list .grp > .grp-head { display: flex; align-items: center; gap: 6px; padding: 6px 6px;
+    font-size: 12px; color: var(--muted); letter-spacing: .5px; cursor: pointer; }
+  #export-list .grp > .grp-head:hover { color: var(--ink); }
+  #export-list .item { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 22px;
+    font-size: 13px; border-radius: 7px; }
+  #export-list .item:hover { background: var(--soft); }
+  #export-list .item label { cursor: pointer; flex: 1; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #export-list .item .meta { color: var(--muted); font-size: 11px; }
+  #export-list input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+  #export-modal .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+
+  /* connection banner */
+  #conn-banner { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+    background: var(--rec); color: #fff; padding: 9px 16px; font-size: 13px; text-align: center; }
+  #conn-banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<div id="conn-banner"></div>
+
+<header>
+  <h1>coco<span id="app-tagline"></span></h1>
+  <div class="spacer"></div>
+  <select id="lang-select" title="Language">
+    <option value="en">EN</option>
+    <option value="fr">FR</option>
+  </select>
+  <select id="model-select"></select>
+  <button id="btn-upload" class="primary"></button>
+  <button id="btn-import"></button>
+  <button id="btn-track"></button>
+  <button id="btn-brief"></button>
+  <button id="btn-export"></button>
+  <button id="btn-memory"></button>
+  <input type="file" id="file-input" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.aiff,.flac,.ogg,.mp4,.mov,.webm,.amr">
+</header>
+
+<main>
+  <nav id="sidebar">
+    <input id="search-box" type="search">
+    <div id="filter-bar">
+      <input type="date" id="filter-from">
+      <span class="sep">–</span>
+      <input type="date" id="filter-to">
+      <span class="lk" id="filter-clear"></span>
+    </div>
+    <div id="sel-bar">
+      <span class="cnt" id="sel-count"></span>
+      <button id="sel-download" class="primary"></button>
+      <button id="sel-clear"></button>
+    </div>
+    <div class="section" id="lib-section"></div>
+    <div id="mtg-list"></div>
+  </nav>
+
+  <section id="content">
+    <div id="empty"></div>
+    <div id="mtg-head" style="display:none"><h2 id="mtg-title"></h2>
+      <div class="meta" id="mtg-meta"></div></div>
+    <div id="tabs" style="display:none"></div>
+    <div id="doc" style="display:none"><div class="md" id="doc-md"></div></div>
+  </section>
+
+  <aside id="chat">
+    <div class="section" id="chat-section"></div>
+    <div id="chat-log">
+      <div class="bubble coco" id="chat-greeting"></div>
+    </div>
+    <div id="chat-ref"></div>
+    <div id="chat-opts"><label><input type="checkbox" id="chat-all"> <span id="chat-all-label"></span></label></div>
+    <div id="chat-input-row">
+      <textarea id="chat-input"></textarea>
+      <button id="btn-send" class="primary"></button>
+    </div>
+  </aside>
+</main>
+
+<div id="overlay"><div id="modal">
+  <h3 id="mem-title"></h3>
+  <div id="mem-tabs">
+    <button id="mem-tab-manual" class="on"></button>
+    <button id="mem-tab-long"></button>
+  </div>
+  <div id="mem-hint"></div>
+  <textarea id="memory-text"></textarea>
+  <div class="row">
+    <button id="btn-dl-memory"></button>
+    <button id="btn-clear-memory"></button>
+    <span style="flex:1"></span>
+    <button id="mem-cancel" onclick="closeModal()"></button>
+    <button class="primary" id="btn-save-memory"></button>
+  </div>
+</div></div>
+
+<div id="export-overlay"><div id="export-modal">
+  <h3 id="export-title"></h3>
+  <div class="hint" id="export-hint"></div>
+  <div id="export-list"></div>
+  <div class="row">
+    <label style="font-size:12px;color:var(--muted);cursor:pointer">
+      <input type="checkbox" id="export-all"> <span id="export-all-label"></span></label>
+    <span id="export-count" style="font-size:12px;color:var(--muted)"></span>
+    <span style="flex:1"></span>
+    <button id="export-cancel" onclick="closeExport()"></button>
+    <button class="primary" id="btn-export-go"></button>
+  </div>
+</div></div>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ---------- i18n ---------- */
+const I18N = {
+  en: {
+    appTagline: 'local meeting assistant',
+    modelTurbo: 'Model: turbo (fast)', modelLarge: 'Model: large (most accurate)',
+    btnUpload: '↑ Upload audio', btnImport: '⌖ Local path', btnTrack: '⛓ Track',
+    btnBrief: '☀ Daily brief', btnExport: '⬇ Export', btnMemory: '◈ Memory',
+    searchPlaceholder: '🔍 Search all transcripts and reports…',
+    filterFrom: 'Start date (inclusive)', filterTo: 'End date (inclusive)', filterClear: 'Clear',
+    selDownload: '↓ Download selected', selClear: 'Cancel', libSection: 'Library',
+    selCount: 'Selected: {0}', selCountHidden: 'Selected: {0} ({1} hidden by date filter)',
+    listEmpty: 'Nothing here yet', listNoRange: 'No meetings in the selected date range',
+    noMatches: 'No matches', loading: 'Loading…',
+    emptyState: 'No meeting selected yet<br>Drag an audio file <b>into the window</b>, or use the "Upload audio" / "Local path" buttons at the top right.<br>Open it on the left once transcription is done. The local path also accepts a folder (batch import).',
+    chatSection: 'Chat with coco',
+    chatGreeting: "Hi, I'm coco. Pick a meeting on the left and ask me anything about that conversation: decisions, mood, action items, hidden disagreements… Tick \"across all meetings\" to ask cross-session questions, like how someone's position changed over time.",
+    chatAllLabel: 'Ask across all meetings (commitments, changes, comparisons…)',
+    chatInputOne: 'Ask about this meeting… (Enter to send)',
+    chatInputAll: 'Ask across all meetings… (Enter to send)',
+    btnSend: 'Send',
+    refAll: 'Context: all transcribed meetings', refOne: 'Context: {0}', refRecent: 'Context: the most recent meeting',
+    thinkingAll: 'coco is reading through all meetings…', thinkingOne: 'coco is thinking…',
+    errorPrefix: 'Error: ',
+    tabTranscript: 'Transcript',
+    btnEdit: '✎ Edit', btnProof: '✦ AI proofread', btnDl: '↓ Download .md',
+    btnDelReport: '✕ Delete', btnGen: 'Generate report', btnCancel: 'Cancel',
+    btnSaveTranscript: 'Save transcript', proofreading: 'Proofreading…',
+    notTranscribed: 'not transcribed', transcribing: '⏳ Transcription in progress…',
+    noTranscript: '(no transcript yet)',
+    metaSep: ' · ',
+    genToast: 'Generating the "{0}" report, ~30-90s…', reportDone: 'Report generated',
+    genFailed: 'Failed to generate: ', generating: 'Generating…',
+    proofConfirm: 'AI proofread: use claude to fix recognition errors, proper nouns and punctuation without rewriting what was said. The original machine transcript is backed up automatically. A long transcript may take a few minutes. Continue?',
+    proofRunning: 'AI proofread in progress; a long transcript may take a few minutes, please keep this page open…',
+    proofDone: 'Proofread done', proofFailed: 'Proofread failed: ',
+    transcriptSaved: 'Transcript saved', saveFailed: 'Save failed: ',
+    delReportConfirm: 'Delete the report "{0}"? It moves to trash library/_trash (recoverable), and you can regenerate it anytime.',
+    reportDeleted: 'Report deleted (recoverable from trash)', deleteFailed: 'Delete failed: ',
+    uploading: 'Uploading {0}…', uploadQueued: '{0} added, transcription queued…', uploadFailed: '{0} upload failed: ',
+    importPrompt: 'Paste the full path of an audio/video file, or a folder path (batch import):',
+    imported: 'Imported {0} file(s), transcription queued…', importFailed: 'Import failed: ',
+    transcribeDone: 'Transcription done', transcribeFailed: 'Transcription failed: ',
+    noTranscribedYet: 'No transcribed meetings yet',
+    briefTitle: 'Daily brief', notGenerated: ' (not generated)',
+    genBrief: 'Generate brief', regenerate: 'Regenerate',
+    briefGenToast: 'Generating the brief for {0} (consolidating all meetings that day)…',
+    briefGenerated: 'Brief generated; it will be merged into long-term memory automatically',
+    briefDelConfirm: 'Delete the brief for {0}? It moves to trash library/_trash (recoverable), and you can regenerate it anytime.',
+    briefDeleted: 'Brief deleted (recoverable from trash)',
+    briefEmptyDay: 'No brief for this day yet. Click "Generate brief" to consolidate all of the day\'s action items and insights.',
+    trackPrompt: 'Tracking focus: a person / project / client (leave blank = global tracking of follow-through and shifts in position):',
+    trackBtn: '⛓ Track', trackBtnBusy: '⛓ Tracking…',
+    trackToast: 'Cross-meeting tracking in progress (consolidating all transcribed meetings; more meetings take longer, possibly a few minutes)…',
+    trackTitle: 'Cross-meeting tracking · {0}', globalScope: 'Global',
+    trackDelConfirm: 'Delete this tracking report? It moves to trash library/_trash and can be recovered by hand.',
+    trackDeleted: 'Tracking report deleted (recoverable from trash)',
+    memTitle: 'Memory (injected into every AI analysis)',
+    memTabManual: 'Manual memory', memTabLong: 'Long-term memory (auto)',
+    memHintContent: 'Names, terms, company background, personal preferences. Maintained by hand; injected into every AI analysis and proofread.',
+    memHintLong: 'People, projects & clients, commitments & decisions, terms. coco extracts and merges these automatically after each transcription; you can edit by hand.',
+    btnDlMemory: '↓ Download .md', btnClearMemory: '✕ Clear',
+    memSaved: 'Memory saved (previous content backed up as .bak.md)',
+    clearManual: 'Manual memory', clearLong: 'Long-term memory',
+    clearConfirm: 'Clear {0}? The previous content is backed up as a .bak.md in memory/ and can be recovered by hand.',
+    clearConfirmLong: '\nAfterwards you can run `coco memorize --all --force` to re-extract from all meetings.',
+    cleared: '{0} cleared (previous content backed up as .bak.md)', clearFailed: 'Clear failed: ',
+    save: 'Save', cancel: 'Cancel',
+    exportTitle: 'Export .md',
+    exportHint: 'Tick the files to export and download them as one zip. You can also tick meetings in the left list and click "Download selected".',
+    exportAll: 'Select all', exportCount: 'Selected: {0} file(s)',
+    exportGo: '↓ Download as zip', exportNone: 'Nothing to export yet',
+    exportLoadFailed: 'Load failed: ', exportPickFirst: 'Tick the files to export first',
+    grpMeetings: 'Meetings (transcripts / reports)', grpBriefs: 'Daily briefs', grpTracking: 'Cross-meeting tracking',
+    zipping: 'Packing the zip…', noExportable: 'The selected meetings have no exportable .md (transcript/report)',
+    zipped: 'Downloaded', exportFailed: 'Export failed: ',
+    modelSwitched: 'Transcription model switched to {0} (applies to later transcriptions)', switchFailed: 'Switch failed: ',
+    connDown: '⚠️ Cannot reach the coco server, reconnecting automatically… (if it stays down, double-click coco.command or run ./run.sh in a terminal)',
+    delMeetingConfirm: 'Delete "{0}"?\nThe whole meeting (audio, transcript, reports) moves to trash library/_trash and can be recovered by hand.',
+    trashed: 'Moved to trash', dateUpdated: 'Recording date updated',
+    srcUpload: 'upload', srcImport: 'import', srcRecording: 'recording', srcLocalImport: 'local import', srcWatch: 'watch:',
+  },
+  fr: {
+    appTagline: 'assistant de réunion local',
+    modelTurbo: 'Modèle : turbo (rapide)', modelLarge: 'Modèle : large (plus précis)',
+    btnUpload: '↑ Importer un audio', btnImport: '⌖ Chemin local', btnTrack: '⛓ Suivi',
+    btnBrief: '☀ Brief quotidien', btnExport: '⬇ Exporter', btnMemory: '◈ Mémoire',
+    searchPlaceholder: '🔍 Rechercher dans les transcriptions et rapports…',
+    filterFrom: 'Date de début (incluse)', filterTo: 'Date de fin (incluse)', filterClear: 'Effacer',
+    selDownload: '↓ Télécharger la sélection', selClear: 'Annuler', libSection: 'Bibliothèque',
+    selCount: 'Sélection : {0}', selCountHidden: 'Sélection : {0} ({1} masquée(s) par le filtre de date)',
+    listEmpty: 'Rien pour l\'instant', listNoRange: 'Aucune réunion dans la plage de dates choisie',
+    noMatches: 'Aucun résultat', loading: 'Chargement…',
+    emptyState: 'Aucune réunion sélectionnée<br>Glissez un fichier audio <b>dans la fenêtre</b>, ou utilisez les boutons « Importer un audio » / « Chemin local » en haut à droite.<br>Ouvrez-la à gauche une fois la transcription terminée. Le chemin local accepte aussi un dossier (import par lot).',
+    chatSection: 'Discuter avec coco',
+    chatGreeting: "Bonjour, je suis coco. Choisissez une réunion à gauche et posez-moi n'importe quelle question sur cette conversation : décisions, humeur, actions, désaccords tus… Cochez « toutes les réunions » pour des questions transversales, par exemple comment la position de quelqu'un a évolué.",
+    chatAllLabel: 'Interroger toutes les réunions (engagements, changements, comparaisons…)',
+    chatInputOne: 'Poser une question sur cette réunion… (Entrée pour envoyer)',
+    chatInputAll: 'Interroger toutes les réunions… (Entrée pour envoyer)',
+    btnSend: 'Envoyer',
+    refAll: 'Contexte : toutes les réunions transcrites', refOne: 'Contexte : {0}', refRecent: 'Contexte : la réunion la plus récente',
+    thinkingAll: 'coco parcourt toutes les réunions…', thinkingOne: 'coco réfléchit…',
+    errorPrefix: 'Erreur : ',
+    tabTranscript: 'Transcription',
+    btnEdit: '✎ Modifier', btnProof: '✦ Relecture IA', btnDl: '↓ Télécharger .md',
+    btnDelReport: '✕ Supprimer', btnGen: 'Générer le rapport', btnCancel: 'Annuler',
+    btnSaveTranscript: 'Enregistrer', proofreading: 'Relecture…',
+    notTranscribed: 'non transcrit', transcribing: '⏳ Transcription en cours…',
+    noTranscript: '(pas encore de transcription)',
+    metaSep: ' · ',
+    genToast: 'Génération du rapport « {0} », ~30-90 s…', reportDone: 'Rapport généré',
+    genFailed: 'Échec de la génération : ', generating: 'Génération…',
+    proofConfirm: 'Relecture IA : utiliser claude pour corriger les erreurs de reconnaissance, les noms propres et la ponctuation sans réécrire le propos. La transcription brute est sauvegardée automatiquement. Une longue transcription peut prendre quelques minutes. Continuer ?',
+    proofRunning: 'Relecture IA en cours ; une longue transcription peut prendre quelques minutes, gardez cette page ouverte…',
+    proofDone: 'Relecture terminée', proofFailed: 'Échec de la relecture : ',
+    transcriptSaved: 'Transcription enregistrée', saveFailed: 'Échec de l\'enregistrement : ',
+    delReportConfirm: 'Supprimer le rapport « {0} » ? Il va à la corbeille library/_trash (récupérable) et peut être régénéré à tout moment.',
+    reportDeleted: 'Rapport supprimé (récupérable depuis la corbeille)', deleteFailed: 'Échec de la suppression : ',
+    uploading: 'Import de {0}…', uploadQueued: '{0} ajouté, transcription en file…', uploadFailed: 'Échec de l\'import de {0} : ',
+    importPrompt: 'Collez le chemin complet d\'un fichier audio/vidéo, ou un chemin de dossier (import par lot) :',
+    imported: '{0} fichier(s) importé(s), transcription en file…', importFailed: 'Échec de l\'import : ',
+    transcribeDone: 'Transcription terminée', transcribeFailed: 'Échec de la transcription : ',
+    noTranscribedYet: 'Aucune réunion transcrite pour l\'instant',
+    briefTitle: 'Brief quotidien', notGenerated: ' (non généré)',
+    genBrief: 'Générer le brief', regenerate: 'Régénérer',
+    briefGenToast: 'Génération du brief du {0} (consolidation de toutes les réunions du jour)…',
+    briefGenerated: 'Brief généré ; il sera fusionné dans la mémoire long terme automatiquement',
+    briefDelConfirm: 'Supprimer le brief du {0} ? Il va à la corbeille library/_trash (récupérable) et peut être régénéré à tout moment.',
+    briefDeleted: 'Brief supprimé (récupérable depuis la corbeille)',
+    briefEmptyDay: 'Pas encore de brief pour ce jour. Cliquez sur « Générer le brief » pour consolider les actions et insights du jour.',
+    trackPrompt: 'Focus du suivi : une personne / un projet / un client (laisser vide = suivi global des engagements et changements de position) :',
+    trackBtn: '⛓ Suivi', trackBtnBusy: '⛓ Suivi en cours…',
+    trackToast: 'Suivi inter-réunions en cours (consolidation de toutes les réunions transcrites ; plus il y en a, plus c\'est long, possiblement quelques minutes)…',
+    trackTitle: 'Suivi inter-réunions · {0}', globalScope: 'Global',
+    trackDelConfirm: 'Supprimer ce rapport de suivi ? Il va à la corbeille library/_trash et peut être récupéré à la main.',
+    trackDeleted: 'Rapport de suivi supprimé (récupérable depuis la corbeille)',
+    memTitle: 'Mémoire (injectée dans chaque analyse IA)',
+    memTabManual: 'Mémoire manuelle', memTabLong: 'Mémoire long terme (auto)',
+    memHintContent: 'Noms, termes, contexte de l\'entreprise, préférences personnelles. Maintenue à la main ; injectée dans chaque analyse et relecture IA.',
+    memHintLong: 'Personnes, projets & clients, engagements & décisions, termes. coco les extrait et fusionne automatiquement après chaque transcription ; modifiable à la main.',
+    btnDlMemory: '↓ Télécharger .md', btnClearMemory: '✕ Vider',
+    memSaved: 'Mémoire enregistrée (contenu précédent sauvegardé en .bak.md)',
+    clearManual: 'la mémoire manuelle', clearLong: 'la mémoire long terme',
+    clearConfirm: 'Vider {0} ? Le contenu précédent est sauvegardé en .bak.md dans memory/ et peut être récupéré à la main.',
+    clearConfirmLong: '\nEnsuite vous pouvez lancer `coco memorize --all --force` pour ré-extraire depuis toutes les réunions.',
+    cleared: '{0} vidée (contenu précédent sauvegardé en .bak.md)', clearFailed: 'Échec du vidage : ',
+    save: 'Enregistrer', cancel: 'Annuler',
+    exportTitle: 'Exporter .md',
+    exportHint: 'Cochez les fichiers à exporter et téléchargez-les en un zip. Vous pouvez aussi cocher des réunions dans la liste de gauche puis « Télécharger la sélection ».',
+    exportAll: 'Tout sélectionner', exportCount: 'Sélection : {0} fichier(s)',
+    exportGo: '↓ Télécharger en zip', exportNone: 'Rien à exporter pour l\'instant',
+    exportLoadFailed: 'Échec du chargement : ', exportPickFirst: 'Cochez d\'abord les fichiers à exporter',
+    grpMeetings: 'Réunions (transcriptions / rapports)', grpBriefs: 'Briefs quotidiens', grpTracking: 'Suivi inter-réunions',
+    zipping: 'Création du zip…', noExportable: 'Les réunions sélectionnées n\'ont pas de .md exportable (transcription/rapport)',
+    zipped: 'Téléchargé', exportFailed: 'Échec de l\'export : ',
+    modelSwitched: 'Modèle de transcription basculé sur {0} (s\'applique aux transcriptions suivantes)', switchFailed: 'Échec du changement : ',
+    connDown: '⚠️ Impossible de joindre le serveur coco, reconnexion automatique… (s\'il reste indisponible, double-cliquez sur coco.command ou lancez ./run.sh dans un terminal)',
+    delMeetingConfirm: 'Supprimer « {0} » ?\nToute la réunion (audio, transcription, rapports) va à la corbeille library/_trash et peut être récupérée à la main.',
+    trashed: 'Déplacé vers la corbeille', dateUpdated: 'Date d\'enregistrement mise à jour',
+    srcUpload: 'import', srcImport: 'import', srcRecording: 'enregistrement', srcLocalImport: 'import local', srcWatch: 'surveillance :',
+  },
+};
+let lang = localStorage.getItem('coco_lang')
+  || ((navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+function t(key, ...args) {
+  let s = (I18N[lang] && I18N[lang][key]) || (I18N.en[key] || key);
+  args.forEach((a, i) => { s = s.replace('{' + i + '}', a); });
+  return s;
+}
+function tplLabel(id) {
+  const tpl = (state.templates || []).find(x => x.id === id);
+  if (!tpl) return id;
+  return (tpl.label && (tpl.label[lang] || tpl.label.en)) || id;
+}
+function reportLabel(stem) {
+  const m = stem.match(/^(.*)-(\d{2})(\d{2})$/);
+  if (m) return `${tplLabel(m[1])} ${m[2]}:${m[3]}`;
+  return stem;
+}
+function sourceLabel(s) {
+  if (!s) return '';
+  if (s.startsWith('watch:')) return t('srcWatch') + s.slice(6);
+  const map = { upload: 'srcUpload', import: 'srcImport', recording: 'srcRecording', 'local import': 'srcLocalImport' };
+  return map[s] ? t(map[s]) : s;
+}
+
+let state = { meetings: [], current: null, tab: 'transcript', recording: false,
+  recSeconds: 0, selected: new Set(), filterFrom: '', filterTo: '', templates: [] };
+
+/* set every static label; called at boot and whenever language changes */
+function applyStatic() {
+  document.documentElement.lang = lang;
+  $('lang-select').value = lang;
+  $('app-tagline').textContent = t('appTagline');
+  const ms = $('model-select');
+  ms.options[0] && (ms.options[0].textContent = t('modelTurbo'));
+  ms.options[1] && (ms.options[1].textContent = t('modelLarge'));
+  $('btn-upload').textContent = t('btnUpload');
+  $('btn-import').textContent = t('btnImport');
+  $('btn-track').textContent = t('trackBtn');
+  $('btn-brief').textContent = t('btnBrief');
+  $('btn-export').textContent = t('btnExport');
+  $('btn-memory').textContent = t('btnMemory');
+  $('search-box').placeholder = t('searchPlaceholder');
+  $('filter-from').title = t('filterFrom');
+  $('filter-to').title = t('filterTo');
+  $('filter-clear').textContent = t('filterClear');
+  $('sel-download').textContent = t('selDownload');
+  $('sel-clear').textContent = t('selClear');
+  $('lib-section').textContent = t('libSection');
+  $('chat-section').textContent = t('chatSection');
+  $('chat-greeting').textContent = t('chatGreeting');
+  $('chat-all-label').textContent = t('chatAllLabel');
+  $('btn-send').textContent = t('btnSend');
+  $('mem-title').textContent = t('memTitle');
+  $('mem-tab-manual').textContent = t('memTabManual');
+  $('mem-tab-long').textContent = t('memTabLong');
+  $('btn-dl-memory').textContent = t('btnDlMemory');
+  $('btn-clear-memory').textContent = t('btnClearMemory');
+  $('mem-cancel').textContent = t('cancel');
+  $('btn-save-memory').textContent = t('save');
+  $('export-title').textContent = t('exportTitle');
+  $('export-hint').textContent = t('exportHint');
+  $('export-all-label').textContent = t('exportAll');
+  $('export-cancel').textContent = t('cancel');
+  $('btn-export-go').textContent = t('exportGo');
+  if (!state.current) $('empty').innerHTML = t('emptyState');
+  updateChatRef();
+}
+
+/* ---------- helpers ---------- */
+function toast(msg, ms = 3200) {
+  $('toast').textContent = msg; $('toast').style.display = 'block';
+  clearTimeout(toast._t); toast._t = setTimeout(() => $('toast').style.display = 'none', ms);
+}
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* minimal markdown: headings/bold/lists/tables/quotes/code/timestamps */
+function md(src) {
+  const lines = esc(src).split('\n');
+  let html = '', listMode = '', inTable = false;
+  const closeList = () => { if (listMode) { html += `</${listMode}>`; listMode = ''; } };
+  const closeTable = () => { if (inTable) { html += '</table>'; inTable = false; } };
+  const inline = s => s
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[(\d+:\d{2}(?::\d{2})?)\]/g, '<span class="ts">[$1]</span>');
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (/^\|.+\|$/.test(line.trim())) {
+      closeList();
+      const cells = line.trim().slice(1, -1).split('|').map(c => c.trim());
+      if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;
+      if (!inTable) { html += '<table>'; inTable = true;
+        html += '<tr>' + cells.map(c => `<th>${inline(c)}</th>`).join('') + '</tr>'; }
+      else html += '<tr>' + cells.map(c => `<td>${inline(c)}</td>`).join('') + '</tr>';
+      continue;
+    }
+    closeTable();
+    let m;
+    if ((m = line.match(/^(#{1,3})\s+(.+)/))) { closeList(); html += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; }
+    else if ((m = line.match(/^[-*]\s+(.+)/))) { if (listMode !== 'ul') { closeList(); html += '<ul>'; listMode = 'ul'; } html += `<li>${inline(m[1])}</li>`; }
+    else if ((m = line.match(/^\d+[.、]\s+(.+)/))) { if (listMode !== 'ol') { closeList(); html += '<ol>'; listMode = 'ol'; } html += `<li>${inline(m[1])}</li>`; }
+    else if ((m = line.match(/^>\s?(.*)/))) { closeList(); html += `<blockquote>${inline(m[1])}</blockquote>`; }
+    else if (line === '') { closeList(); }
+    else { closeList(); html += `<p>${inline(line)}</p>`; }
+  }
+  closeList(); closeTable();
+  return html;
+}
+
+/* ---------- library ---------- */
+async function loadMeetings(keepCurrent = true) {
+  state.meetings = await api('/api/meetings');
+  if (!state.searchQuery) renderMeetingList();
+  if (keepCurrent && state.current) renderDocIfStale();
+}
+
+function effectiveMeetings() {
+  let ms = state.meetings;
+  if (state.filterFrom) ms = ms.filter(m => (m.date || '') >= state.filterFrom);
+  if (state.filterTo) ms = ms.filter(m => (m.date || '') <= state.filterTo);
+  return ms;
+}
+
+function renderMeetingList() {
+  if (state.searchQuery) return;
+  if (state.editingDate) return;
+  const ms = effectiveMeetings();
+  const sig = JSON.stringify([ms, state.current, state.filterFrom, state.filterTo, lang]);
+  if (sig === renderMeetingList._sig) { updateSelBar(); return; }
+  renderMeetingList._sig = sig;
+  const list = $('mtg-list');
+  list.innerHTML = '';
+  if (!state.meetings.length) {
+    list.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--muted)">${t('listEmpty')}</div>`;
+    updateSelBar(); return;
+  }
+  if (!ms.length) {
+    list.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--muted)">${t('listNoRange')}</div>`;
+    updateSelBar(); return;
+  }
+  for (const m of ms) {
+    const div = document.createElement('div');
+    div.className = 'mtg' + (state.current === m.id ? ' active' : '');
+    const mark = { done: '', transcribing: '⏳ ', error: '⚠️ ', new: '· ' }[m.status] || '';
+    const time = m.created && m.created.includes('T') ? m.created.slice(11, 16) : '';
+    div.innerHTML =
+      `<input type="checkbox" class="sel"${state.selected.has(m.id) ? ' checked' : ''}>
+       <div class="body">
+         <div class="t">${mark}${esc(m.title)}</div>
+         <div class="s"><span class="date">${esc(m.date || '—')}</span> ${time} ${esc(m.duration || '')}</div>
+       </div>
+       <button class="del">✕</button>`;
+    div.onclick = () => openMeeting(m.id);
+    const cb = div.querySelector('.sel');
+    cb.onclick = e => { e.stopPropagation(); toggleSelect(m.id, cb.checked); };
+    div.querySelector('.del').onclick = e => { e.stopPropagation(); delMeeting(m); };
+    div.querySelector('.date').onclick = e => { e.stopPropagation(); editMeetingDate(m, e.target); };
+    list.appendChild(div);
+  }
+  updateSelBar();
+}
+
+/* ---------- sidebar: select + date filter + edit date ---------- */
+function toggleSelect(id, on) {
+  if (on) state.selected.add(id); else state.selected.delete(id);
+  updateSelBar();
+}
+
+function updateSelBar() {
+  const ids = new Set(state.meetings.map(m => m.id));
+  for (const id of [...state.selected]) if (!ids.has(id)) state.selected.delete(id);
+  const n = state.selected.size;
+  const visible = new Set(effectiveMeetings().map(m => m.id));
+  const hidden = [...state.selected].filter(id => !visible.has(id)).length;
+  $('sel-bar').classList.toggle('show', n > 0 && !state.searchQuery);
+  if (n) $('sel-count').textContent = hidden ? t('selCountHidden', n, hidden) : t('selCount', n);
+}
+
+function selectedMeetingItems() {
+  const items = [];
+  for (const id of state.selected) {
+    const m = state.meetings.find(x => x.id === id);
+    if (!m) continue;
+    if (m.has_transcript) items.push({ type: 'transcript', id });
+    (m.reports || []).forEach(name => items.push({ type: 'report', id, name }));
+  }
+  return items;
+}
+
+async function postDownload(items) {
+  if (!items.length) { toast(t('noExportable')); return; }
+  toast(t('zipping'));
+  try {
+    const res = await fetch('/api/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.detail || res.statusText);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const mm = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const fname = mm ? decodeURIComponent(mm[1]) : 'coco-export.zip';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(t('zipped'));
+  } catch (e) { toast(t('exportFailed') + e.message, 6000); }
+}
+
+$('sel-download').onclick = () => postDownload(selectedMeetingItems());
+$('sel-clear').onclick = () => {
+  state.selected.clear();
+  document.querySelectorAll('#mtg-list .sel').forEach(c => c.checked = false);
+  updateSelBar();
+};
+$('filter-from').onchange = e => { state.filterFrom = e.target.value; renderMeetingList(); };
+$('filter-to').onchange = e => { state.filterTo = e.target.value; renderMeetingList(); };
+$('filter-clear').onclick = () => {
+  state.filterFrom = state.filterTo = '';
+  $('filter-from').value = ''; $('filter-to').value = '';
+  renderMeetingList();
+};
+
+function editMeetingDate(m, span) {
+  state.editingDate = true;
+  const input = document.createElement('input');
+  input.type = 'date'; input.className = 'date-edit'; input.value = m.date || '';
+  span.replaceWith(input);
+  input.focus();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return; done = true;
+    state.editingDate = false;
+    const v = input.value;
+    renderMeetingList._sig = null;
+    if (save && v && v !== m.date) {
+      try {
+        await api(`/api/meetings/${encodeURIComponent(m.id)}/meta`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: v }),
+        });
+        toast(t('dateUpdated'));
+        await loadMeetings();
+      } catch (e) { toast(t('deleteFailed') + e.message, 6000); renderMeetingList(); }
+    } else {
+      renderMeetingList();
+    }
+  };
+  input.onclick = e => e.stopPropagation();
+  input.onchange = () => finish(true);
+  input.onblur = () => finish(true);
+  input.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  };
+}
+
+async function delMeeting(m) {
+  if (!confirm(t('delMeetingConfirm', m.title))) return;
+  try {
+    await api('/api/meetings/' + encodeURIComponent(m.id), { method: 'DELETE' });
+    toast(t('trashed'));
+    if (state.current === m.id) { state.current = null; showEmpty(); }
+    state.searchQuery ? doSearch() : loadMeetings();
+  } catch (e) { toast(t('deleteFailed') + e.message, 6000); }
+}
+
+function showEmpty() {
+  $('empty').style.display = '';
+  $('empty').innerHTML = t('emptyState');
+  $('mtg-head').style.display = 'none';
+  $('tabs').style.display = 'none';
+  $('doc').style.display = 'none';
+  updateChatRef();
+}
+
+/* ---------- global search ---------- */
+let searchTimer;
+$('search-box').addEventListener('input', e => {
+  state.searchQuery = e.target.value.trim();
+  clearTimeout(searchTimer);
+  if (!state.searchQuery) { renderMeetingList._sig = null; renderMeetingList(); return; }
+  searchTimer = setTimeout(doSearch, 350);
+});
+
+async function doSearch() {
+  const q = state.searchQuery;
+  if (!q) return;
+  const results = await api('/api/search?q=' + encodeURIComponent(q));
+  if (q !== state.searchQuery) return;
+  renderMeetingList._sig = null;
+  const list = $('mtg-list');
+  list.innerHTML = '';
+  if (!results.length) {
+    list.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--muted)">${t('noMatches')}</div>`;
+    return;
+  }
+  for (const r of results) {
+    const div = document.createElement('div');
+    div.className = 'mtg' + (state.current === r.id ? ' active' : '');
+    const hits = r.matches.map(h =>
+      `<div class="hit">[${esc(h.where)}] ${esc(h.line)}</div>`).join('');
+    div.innerHTML = `<div class="body"><div class="t">${esc(r.title)}</div>${hits}</div>`;
+    div.onclick = () => openMeeting(r.id);
+    list.appendChild(div);
+  }
+}
+
+async function openMeeting(id) {
+  state.current = id; state.tab = 'transcript'; state.editing = false;
+  await renderMeeting();
+  loadMeetings();
+}
+
+async function renderMeeting() {
+  if (!state.current) return;
+  const m = await api('/api/meetings/' + encodeURIComponent(state.current));
+  state.currentData = m;
+  $('empty').style.display = 'none';
+  $('mtg-head').style.display = ''; $('tabs').style.display = 'flex'; $('doc').style.display = '';
+  $('mtg-title').textContent = m.title;
+  $('mtg-meta').style.cssText = '';
+  $('mtg-meta').textContent =
+    `${m.created.slice(0, 16).replace('T', ' ')}${t('metaSep')}${m.duration || t('notTranscribed')}${t('metaSep')}${sourceLabel(m.source)}`;
+  const tabs = $('tabs'); tabs.innerHTML = '';
+  const addTab = (key, label) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (state.tab === key ? ' active' : '');
+    tab.textContent = label;
+    tab.onclick = () => { state.tab = key; state.editing = false; renderMeeting(); };
+    tabs.appendChild(tab);
+  };
+  addTab('transcript', t('tabTranscript'));
+  m.report_list.forEach(r => addTab('r:' + r.name, reportLabel(r.name)));
+  const actions = document.createElement('div');
+  actions.id = 'report-actions';
+  tabs.appendChild(actions);
+
+  if (state.editing && state.tab === 'transcript') {
+    actions.innerHTML = `<button id="btn-cancel">${t('btnCancel')}</button>
+      <button id="btn-save" class="primary">${t('btnSaveTranscript')}</button>`;
+    actions.querySelector('#btn-cancel').onclick = () => { state.editing = false; renderMeeting(); };
+    actions.querySelector('#btn-save').onclick = saveTranscript;
+    $('doc-md').innerHTML = '';
+    const ta = document.createElement('textarea');
+    ta.id = 'edit-area'; ta.value = m.transcript || '';
+    $('doc-md').appendChild(ta);
+    updateChatRef();
+    return;
+  }
+
+  const extra = state.tab === 'transcript'
+    ? `<button id="btn-edit">${t('btnEdit')}</button><button id="btn-proof">${t('btnProof')}</button>` : '';
+  const delBtn = state.tab === 'transcript' ? '' : `<button id="btn-del-report">${t('btnDelReport')}</button>`;
+  actions.innerHTML = `${extra}<button id="btn-dl">${t('btnDl')}</button>${delBtn}
+    <select id="tpl-select"></select>
+    <button id="btn-gen" class="primary">${t('btnGen')}</button>`;
+  const sel = actions.querySelector('#tpl-select');
+  (state.templates || []).forEach(tpl => {
+    const o = document.createElement('option');
+    o.value = tpl.id; o.textContent = tplLabel(tpl.id);
+    o.title = (tpl.desc && (tpl.desc[lang] || tpl.desc.en)) || '';
+    sel.appendChild(o);
+  });
+  actions.querySelector('#btn-gen').onclick = genReport;
+  actions.querySelector('#btn-dl').onclick = () => {
+    const mid = encodeURIComponent(state.current);
+    const url = state.tab === 'transcript'
+      ? `/api/download/meeting/${mid}/transcript`
+      : `/api/download/meeting/${mid}/report/${encodeURIComponent(state.tab.slice(2))}`;
+    window.location.href = url;
+  };
+  if (state.tab === 'transcript') {
+    actions.querySelector('#btn-edit').onclick = () => { state.editing = true; renderMeeting(); };
+    actions.querySelector('#btn-proof').onclick = proofreadTranscript;
+  } else {
+    actions.querySelector('#btn-del-report').onclick = async () => {
+      const name = state.tab.slice(2);
+      if (!confirm(t('delReportConfirm', reportLabel(name)))) return;
+      try {
+        await api(`/api/meetings/${encodeURIComponent(state.current)}/reports/${encodeURIComponent(name)}`,
+          { method: 'DELETE' });
+        state.tab = 'transcript'; toast(t('reportDeleted'));
+        await renderMeeting();
+      } catch (e) { toast(t('deleteFailed') + e.message, 6000); }
+    };
+  }
+
+  let content;
+  if (state.tab === 'transcript')
+    content = m.transcript || (m.status === 'transcribing' ? t('transcribing') : t('noTranscript'));
+  else {
+    const r = m.report_list.find(r => 'r:' + r.name === state.tab);
+    content = r ? r.content : '';
+  }
+  $('doc-md').innerHTML = md(content);
+  updateChatRef();
+}
+
+async function saveTranscript() {
+  const content = $('edit-area').value;
+  try {
+    await api(`/api/meetings/${encodeURIComponent(state.current)}/transcript`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    state.editing = false; toast(t('transcriptSaved'));
+    await renderMeeting();
+  } catch (e) { toast(t('saveFailed') + e.message, 6000); }
+}
+
+async function proofreadTranscript() {
+  if (!confirm(t('proofConfirm'))) return;
+  const btn = $('btn-proof');
+  btn.disabled = true; btn.textContent = t('proofreading');
+  toast(t('proofRunning'), 9000);
+  try {
+    await api('/api/proofread/' + encodeURIComponent(state.current), { method: 'POST' });
+    toast(t('proofDone'));
+    await renderMeeting();
+  } catch (e) {
+    toast(t('proofFailed') + e.message, 9000);
+    if ($('btn-proof')) { $('btn-proof').disabled = false; $('btn-proof').textContent = t('btnProof'); }
+  }
+}
+
+function renderDocIfStale() {
+  const cur = state.meetings.find(m => m.id === state.current);
+  if (cur && state.currentData && cur.status !== state.currentData.status) renderMeeting();
+}
+
+/* ---------- reports ---------- */
+async function genReport() {
+  const sel = $('tpl-select');
+  const tpl = sel.value;
+  const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : tpl;
+  const btn = $('btn-gen');
+  btn.disabled = true; btn.textContent = t('generating');
+  toast(t('genToast', label), 6000);
+  try {
+    const r = await api('/api/report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.current, template: tpl }),
+    });
+    toast(t('reportDone'));
+    state.tab = 'r:' + r.path.split('/').pop().replace('.md', '');
+    await renderMeeting();
+  } catch (e) { toast(t('genFailed') + e.message, 6000); }
+  btn.disabled = false; btn.textContent = t('btnGen');
+}
+
+/* ---------- chat ---------- */
+function updateChatRef() {
+  const all = $('chat-all').checked;
+  if (all) {
+    $('chat-ref').textContent = t('refAll');
+  } else if (state.current && state.currentData) {
+    $('chat-ref').textContent = t('refOne', state.currentData.title);
+  } else {
+    $('chat-ref').textContent = t('refRecent');
+  }
+  $('chat-input').placeholder = all ? t('chatInputAll') : t('chatInputOne');
+}
+$('chat-all').onchange = updateChatRef;
+
+async function send() {
+  const q = $('chat-input').value.trim();
+  if (!q) return;
+  $('chat-input').value = '';
+  const all = $('chat-all').checked;
+  const log = $('chat-log');
+  log.insertAdjacentHTML('beforeend', `<div class="bubble user">${esc(q)}</div>`);
+  const tip = document.createElement('div');
+  tip.className = 'bubble coco thinking';
+  tip.textContent = all ? t('thinkingAll') : t('thinkingOne');
+  log.appendChild(tip); log.scrollTop = log.scrollHeight;
+  try {
+    const r = await api('/api/ask', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q,
+        ids: !all && state.current ? [state.current] : [], all }),
+    });
+    tip.className = 'bubble coco'; tip.innerHTML = md(r.answer);
+  } catch (e) { tip.className = 'bubble coco'; tip.textContent = t('errorPrefix') + e.message; }
+  log.scrollTop = log.scrollHeight;
+}
+$('btn-send').onclick = send;
+$('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+/* ---------- upload (multi-select + drag-drop) ---------- */
+async function uploadFiles(files) {
+  for (const f of files) {
+    const fd = new FormData();
+    fd.append('file', f);
+    toast(t('uploading', f.name));
+    try {
+      const r = await api('/api/upload', { method: 'POST', body: fd });
+      toast(t('uploadQueued', f.name));
+      watchJob(r.job, r.meeting_id);
+    } catch (err) { toast(t('uploadFailed', f.name) + err.message, 6000); }
+  }
+}
+$('btn-upload').onclick = () => $('file-input').click();
+$('file-input').onchange = e => { uploadFiles([...e.target.files]); e.target.value = ''; };
+
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  if (e.dataTransfer.files.length) uploadFiles([...e.dataTransfer.files]);
+});
+
+/* ---------- local path import ---------- */
+$('btn-import').onclick = async () => {
+  const path = prompt(t('importPrompt'));
+  if (!path) return;
+  try {
+    const r = await api('/api/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    toast(t('imported', r.count));
+    r.imported.forEach(it => watchJob(it.job, it.meeting_id));
+  } catch (e) { toast(t('importFailed') + e.message, 8000); }
+};
+
+/* ---------- job polling ---------- */
+function watchJob(jid, meetingId) {
+  loadMeetings();
+  const timer = setInterval(async () => {
+    try {
+      const j = await api('/api/jobs/' + jid);
+      if (j.status === 'done') {
+        clearInterval(timer); toast(t('transcribeDone'));
+        await loadMeetings();
+        if (!state.current || state.current === meetingId) openMeeting(meetingId);
+      } else if (j.status === 'error') {
+        clearInterval(timer); toast(t('transcribeFailed') + j.detail, 9000); loadMeetings();
+      }
+    } catch { clearInterval(timer); }
+  }, 3000);
+}
+
+/* ---------- daily brief (with history) ---------- */
+$('btn-brief').onclick = () => showBriefView();
+
+async function showBriefView(selDate) {
+  const briefs = await api('/api/briefs');
+  const dates = new Map(); // date -> content (null = has meetings but no brief)
+  briefs.forEach(b => dates.set(b.date, b.content));
+  state.meetings.filter(m => m.has_transcript)
+    .forEach(m => { const d = m.date || m.created.slice(0, 10); if (!dates.has(d)) dates.set(d, null); });
+  const sorted = [...dates.keys()].sort().reverse();
+  if (!sorted.length) { toast(t('noTranscribedYet')); return; }
+  const date = dates.has(selDate) ? selDate : sorted[0];
+
+  $('empty').style.display = 'none';
+  $('mtg-head').style.display = ''; $('tabs').style.display = 'none'; $('doc').style.display = '';
+  $('mtg-title').textContent = t('briefTitle');
+  const meta = $('mtg-meta');
+  meta.innerHTML = '';
+  meta.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px';
+  const sel = document.createElement('select');
+  sorted.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = d + (dates.get(d) === null ? t('notGenerated') : '');
+    if (d === date) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => showBriefView(sel.value);
+  meta.appendChild(sel);
+  const gen = document.createElement('button');
+  gen.textContent = dates.get(date) === null ? t('genBrief') : t('regenerate');
+  gen.onclick = async () => {
+    const label = gen.textContent;
+    gen.disabled = true; gen.textContent = t('generating');
+    toast(t('briefGenToast', date), 8000);
+    try {
+      await api('/api/brief', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      });
+      toast(t('briefGenerated'));
+      showBriefView(date);
+    } catch (e) { toast(e.message, 6000); gen.disabled = false; gen.textContent = label; }
+  };
+  meta.appendChild(gen);
+  if (dates.get(date) !== null) {
+    const dl = document.createElement('button');
+    dl.textContent = t('btnDl');
+    dl.onclick = () => { window.location.href = '/api/download/brief/' + date; };
+    meta.appendChild(dl);
+    const del = document.createElement('button');
+    del.textContent = t('btnDelReport');
+    del.onclick = async () => {
+      if (!confirm(t('briefDelConfirm', date))) return;
+      try {
+        await api('/api/briefs/' + date, { method: 'DELETE' });
+        toast(t('briefDeleted'));
+        showBriefView(date);
+      } catch (e) { toast(t('deleteFailed') + e.message, 6000); }
+    };
+    meta.appendChild(del);
+  }
+  $('doc-md').innerHTML = dates.get(date) !== null
+    ? md(dates.get(date))
+    : `<p style="color:var(--muted)">${t('briefEmptyDay')}</p>`;
+  state.current = null;
+  updateChatRef();
+}
+
+/* ---------- cross-meeting tracking ---------- */
+$('btn-track').onclick = async () => {
+  const btn = $('btn-track');
+  if (btn.disabled) return;
+  const focus = prompt(t('trackPrompt'), '');
+  if (focus === null) return;
+  btn.disabled = true; btn.textContent = t('trackBtnBusy');
+  toast(t('trackToast'), 12000);
+  try {
+    const r = await api('/api/track', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ focus }),
+    });
+    $('empty').style.display = 'none';
+    $('mtg-head').style.display = ''; $('tabs').style.display = 'none'; $('doc').style.display = '';
+    $('mtg-title').textContent = t('trackTitle', focus || t('globalScope'));
+    $('mtg-meta').innerHTML = '';
+    $('mtg-meta').style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px';
+    const dl = document.createElement('button');
+    dl.textContent = t('btnDl');
+    dl.onclick = () => { window.location.href = '/api/download/tracking/' + encodeURIComponent(r.name); };
+    $('mtg-meta').appendChild(dl);
+    const del = document.createElement('button');
+    del.textContent = t('btnDelReport');
+    del.onclick = async () => {
+      if (!confirm(t('trackDelConfirm'))) return;
+      try {
+        await api('/api/tracking/' + encodeURIComponent(r.name), { method: 'DELETE' });
+        toast(t('trackDeleted'));
+        showEmpty();
+      } catch (e) { toast(t('deleteFailed') + e.message, 6000); }
+    };
+    $('mtg-meta').appendChild(del);
+    $('doc-md').innerHTML = md(r.content);
+    state.current = null;
+    updateChatRef();
+  } catch (e) { toast(e.message, 8000); }
+  finally { btn.disabled = false; btn.textContent = t('trackBtn'); }
+};
+
+/* ---------- memory (manual + auto long-term) ---------- */
+let memData = { content: '', longterm: '' }, memTab = 'content';
+function closeModal() { $('overlay').className = ''; }
+$('overlay').onclick = e => { if (e.target === $('overlay')) closeModal(); };
+window.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeExport(); } });
+function memHint(tab) { return tab === 'content' ? t('memHintContent') : t('memHintLong'); }
+function setMemTab(tab) {
+  memData[memTab] = $('memory-text').value;
+  memTab = tab;
+  $('memory-text').value = memData[tab];
+  $('mem-hint').textContent = memHint(tab);
+  $('mem-tab-manual').className = tab === 'content' ? 'on' : '';
+  $('mem-tab-long').className = tab === 'longterm' ? 'on' : '';
+}
+$('mem-tab-manual').onclick = () => setMemTab('content');
+$('mem-tab-long').onclick = () => setMemTab('longterm');
+$('btn-memory').onclick = async () => {
+  const r = await api('/api/memory');
+  memData = { content: r.content, longterm: r.longterm };
+  $('memory-text').value = memData[memTab];
+  $('mem-hint').textContent = memHint(memTab);
+  $('overlay').className = 'show';
+};
+$('btn-save-memory').onclick = async () => {
+  memData[memTab] = $('memory-text').value;
+  await api('/api/memory', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(memData),
+  });
+  closeModal(); toast(t('memSaved'));
+};
+$('btn-dl-memory').onclick = () => {
+  window.location.href = '/api/download/memory/' + memTab;
+};
+$('btn-clear-memory').onclick = async () => {
+  const label = memTab === 'content' ? t('clearManual') : t('clearLong');
+  let msg = t('clearConfirm', label);
+  if (memTab === 'longterm') msg += t('clearConfirmLong');
+  if (!confirm(msg)) return;
+  try {
+    const r = await api('/api/memory/clear', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ which: memTab }),
+    });
+    memData[memTab] = r.content;
+    $('memory-text').value = r.content;
+    toast(t('cleared', label));
+  } catch (e) { toast(t('clearFailed') + e.message, 6000); }
+};
+
+/* ---------- batch export dialog (tick individual files) ---------- */
+let exportItems = [];
+function closeExport() { $('export-overlay').className = ''; }
+$('export-overlay').onclick = e => { if (e.target === $('export-overlay')) closeExport(); };
+$('btn-export').onclick = openExport;
+
+async function openExport() {
+  $('export-list').innerHTML = `<div style="padding:20px;color:var(--muted);font-size:13px">${t('loading')}</div>`;
+  $('export-overlay').className = 'show';
+  let mm;
+  try { mm = await api('/api/export/manifest'); }
+  catch (e) { $('export-list').innerHTML = `<div style="padding:20px;color:var(--rec)">${t('exportLoadFailed')}${esc(e.message)}</div>`; return; }
+  const groups = [];
+  if (mm.meetings.length) {
+    const items = [];
+    mm.meetings.forEach(m => m.files.forEach(f => {
+      const fileLabel = f.type === 'transcript' ? t('tabTranscript')
+        : f.type === 'report' ? reportLabel(f.name) : f.label;
+      items.push({ spec: { type: f.type, id: m.id, name: f.name },
+        label: `${m.title} · ${fileLabel}`, meta: m.date });
+    }));
+    groups.push({ title: t('grpMeetings'), items });
+  }
+  if (mm.briefs.length) groups.push({ title: t('grpBriefs'),
+    items: mm.briefs.map(b => ({ spec: { type: 'brief', name: b.name }, label: b.label, meta: '' })) });
+  if (mm.tracking.length) groups.push({ title: t('grpTracking'),
+    items: mm.tracking.map(tr => ({ spec: { type: 'tracking', name: tr.name }, label: tr.label, meta: '' })) });
+
+  const wrap = $('export-list');
+  wrap.innerHTML = '';
+  exportItems = [];
+  if (!groups.length) { wrap.innerHTML = `<div style="padding:20px;color:var(--muted)">${t('exportNone')}</div>`; }
+  let idx = 0;
+  groups.forEach(g => {
+    const gd = document.createElement('div'); gd.className = 'grp';
+    const head = document.createElement('div'); head.className = 'grp-head';
+    head.innerHTML = `<input type="checkbox" class="grp-cb"> <b>${esc(g.title)}</b> <span style="opacity:.6">(${g.items.length})</span>`;
+    gd.appendChild(head);
+    const cbs = [];
+    g.items.forEach(it => {
+      const i = idx++; exportItems.push(it.spec);
+      const row = document.createElement('div'); row.className = 'item';
+      row.innerHTML = `<input type="checkbox" data-i="${i}" class="exp-cb">
+        <label>${esc(it.label)}</label>${it.meta ? `<span class="meta">${esc(it.meta)}</span>` : ''}`;
+      const cb = row.querySelector('.exp-cb');
+      cb.onchange = updateExportCount;
+      row.querySelector('label').onclick = () => { cb.checked = !cb.checked; updateExportCount(); };
+      cbs.push(cb); gd.appendChild(row);
+    });
+    head.querySelector('.grp-cb').onchange = e => { cbs.forEach(c => c.checked = e.target.checked); updateExportCount(); };
+    wrap.appendChild(gd);
+  });
+  $('export-all').checked = false;
+  updateExportCount();
+}
+
+function checkedExportSpecs() {
+  return [...document.querySelectorAll('#export-list .exp-cb')]
+    .filter(c => c.checked).map(c => exportItems[+c.dataset.i]);
+}
+function updateExportCount() {
+  const n = checkedExportSpecs().length;
+  $('export-count').textContent = n ? t('exportCount', n) : '';
+}
+$('export-all').onchange = e => {
+  document.querySelectorAll('#export-list .exp-cb, #export-list .grp-cb').forEach(c => c.checked = e.target.checked);
+  updateExportCount();
+};
+$('btn-export-go').onclick = async () => {
+  const specs = checkedExportSpecs();
+  if (!specs.length) { toast(t('exportPickFirst')); return; }
+  await postDownload(specs);
+  closeExport();
+};
+
+/* ---------- connection banner ---------- */
+function setConn(down) {
+  const b = $('conn-banner');
+  if (down) { b.textContent = t('connDown'); b.classList.add('show'); }
+  else b.classList.remove('show');
+}
+
+/* ---------- language switch ---------- */
+$('lang-select').onchange = e => {
+  lang = e.target.value;
+  localStorage.setItem('coco_lang', lang);
+  applyStatic();
+  renderMeetingList._sig = null;
+  if (state.searchQuery) doSearch(); else renderMeetingList();
+  if (state.current) renderMeeting();
+};
+
+/* ---------- boot ---------- */
+async function bootstrap() {
+  state.templates = await api('/api/templates');
+  const cfg = await api('/api/config');
+  $('model-select').value = cfg.whisper_model;
+  $('model-select').onchange = async e => {
+    try {
+      await api('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whisper_model: e.target.value }),
+      });
+      toast(t('modelSwitched', e.target.value));
+    } catch (err) { toast(t('switchFailed') + err.message, 6000); }
+  };
+  await loadMeetings();
+}
+
+(async function init() {
+  // build the static model-select options once, then localize them
+  const ms = $('model-select');
+  ms.innerHTML = '<option value="turbo"></option><option value="large"></option>';
+  applyStatic();
+  while (true) {
+    try { await bootstrap(); setConn(false); break; }
+    catch { setConn(true); await new Promise(r => setTimeout(r, 2000)); }
+  }
+  applyStatic(); // templates are loaded now; refresh any label that depends on them
+  setInterval(async () => {
+    try { await loadMeetings(); setConn(false); }
+    catch { setConn(true); }
+  }, 8000);
+})();
+</script>
+</body>
+</html>

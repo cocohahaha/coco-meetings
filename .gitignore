@@ -1,0 +1,13 @@
+# runtime environment
+.venv/
+__pycache__/
+*.pyc
+logs/
+
+# private data: recordings, transcripts, reports, memory, personal config — never upload
+library/
+memory/
+coco.config.json
+
+# system
+.DS_Store
