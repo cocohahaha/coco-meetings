@@ -99,6 +99,7 @@ class Meeting:
             "date": self.date,
             "duration": m.get("duration", ""),
             "source": m.get("source", ""),
+            "language": m.get("language", ""),  # language detected/used at transcription
             "status": m.get("status", "new"),  # new|transcribing|done|error
             "has_transcript": self.transcript_md.exists(),
             "reports": [p.stem for p in self.reports()],

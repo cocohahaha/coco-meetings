@@ -37,6 +37,7 @@ DEFAULTS = {
     "whisper_model": "turbo",   # turbo (fast) | large (most accurate) | tiny (self-check)
     "language": "auto",         # auto = detect per file; or an ISO code like "en", "fr", "zh"
     "initial_prompt_extra": "",  # proper nouns / names appended to the transcription prompt
+    "beam_size": 0,             # 0 = greedy (fast). Set 5 for beam search: more accurate, slower
     "audio_device": ":0",       # ffmpeg avfoundation audio input device (see: coco devices)
     "claude_bin": "claude",
     "claude_extra_args": [],    # e.g. ["--model", "claude-sonnet-4-6"]

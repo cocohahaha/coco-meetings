@@ -38,6 +38,13 @@ def transcribe_file(audio: Path, model: str | None = None,
     # language-neutral: Whisper detects the spoken language on its own.
     if cfg.get("initial_prompt_extra"):
         kwargs["initial_prompt"] = cfg["initial_prompt_extra"]
+    # Optional beam search: more accurate, slower. 0 / unset = greedy decoding.
+    try:
+        beam = int(cfg.get("beam_size") or 0)
+    except (TypeError, ValueError):
+        beam = 0
+    if beam > 0:
+        kwargs["beam_size"] = beam
     result = mlx_whisper.transcribe(
         str(audio),
         path_or_hf_repo=repo,

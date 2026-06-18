@@ -389,21 +389,33 @@ def api_delete_brief(date: str):
 
 @app.get("/api/config")
 def api_config():
-    return {"whisper_model": load_config()["whisper_model"]}
+    cfg = load_config()
+    return {"whisper_model": cfg["whisper_model"], "language": cfg.get("language", "auto")}
 
 
 class ConfigBody(BaseModel):
-    whisper_model: str
+    whisper_model: str | None = None
+    language: str | None = None
+
+
+def _valid_lang(v: str) -> bool:
+    return v == "auto" or (v.isalpha() and 2 <= len(v) <= 3)
 
 
 @app.post("/api/config")
 def api_config_save(body: ConfigBody):
-    if body.whisper_model not in ("turbo", "large"):
-        _err(ValueError("Model must be turbo or large"))
     cfg = load_config()
-    cfg["whisper_model"] = body.whisper_model
+    if body.whisper_model is not None:
+        if body.whisper_model not in ("turbo", "large"):
+            _err(ValueError("Model must be turbo or large"))
+        cfg["whisper_model"] = body.whisper_model
+    if body.language is not None:
+        if not _valid_lang(body.language):
+            _err(ValueError("Language must be 'auto' or an ISO code like en, fr, zh"))
+        cfg["language"] = body.language
     save_config(cfg)
-    return {"ok": True, "whisper_model": body.whisper_model}
+    return {"ok": True, "whisper_model": cfg["whisper_model"],
+            "language": cfg.get("language", "auto")}
 
 
 class TranscriptBody(BaseModel):

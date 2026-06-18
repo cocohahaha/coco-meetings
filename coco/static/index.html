@@ -216,6 +216,16 @@
     <option value="fr">FR</option>
   </select>
   <select id="model-select"></select>
+  <select id="tlang-select" title="">
+    <option value="auto"></option>
+    <option value="en">English</option>
+    <option value="fr">Français</option>
+    <option value="zh">中文</option>
+    <option value="es">Español</option>
+    <option value="de">Deutsch</option>
+    <option value="it">Italiano</option>
+    <option value="ja">日本語</option>
+  </select>
   <button id="btn-upload" class="primary"></button>
   <button id="btn-import"></button>
   <button id="btn-track"></button>
@@ -306,6 +316,8 @@ const I18N = {
   en: {
     appTagline: 'local meeting assistant',
     modelTurbo: 'Model: turbo (fast)', modelLarge: 'Model: large (most accurate)',
+    tlangTitle: 'Transcription language (applies to later transcriptions)', tlangAuto: 'Lang: auto-detect',
+    detected: 'detected: {0}', tlangSwitched: 'Transcription language set to {0}',
     btnUpload: '↑ Upload', btnImport: '⌖ Local path', btnTrack: '⛓ Track',
     btnBrief: '☀ Daily brief', btnExport: '⬇ Export', btnMemory: '◈ Memory',
     searchPlaceholder: '🔍 Search all transcripts and reports…',
@@ -386,6 +398,8 @@ const I18N = {
   fr: {
     appTagline: 'assistant de réunion local',
     modelTurbo: 'Modèle : turbo (rapide)', modelLarge: 'Modèle : large (plus précis)',
+    tlangTitle: 'Langue de transcription (s\'applique aux transcriptions suivantes)', tlangAuto: 'Langue : détection auto',
+    detected: 'détectée : {0}', tlangSwitched: 'Langue de transcription réglée sur {0}',
     btnUpload: '↑ Importer un audio', btnImport: '⌖ Chemin local', btnTrack: '⛓ Suivi',
     btnBrief: '☀ Brief quotidien', btnExport: '⬇ Exporter', btnMemory: '◈ Mémoire',
     searchPlaceholder: '🔍 Rechercher dans les transcriptions et rapports…',
@@ -499,6 +513,9 @@ function applyStatic() {
   const ms = $('model-select');
   ms.options[0] && (ms.options[0].textContent = t('modelTurbo'));
   ms.options[1] && (ms.options[1].textContent = t('modelLarge'));
+  const tl = $('tlang-select');
+  tl.title = t('tlangTitle');
+  tl.options[0] && (tl.options[0].textContent = t('tlangAuto'));
   $('btn-upload').textContent = t('btnUpload');
   $('btn-import').textContent = t('btnImport');
   $('btn-track').textContent = t('trackBtn');
@@ -796,8 +813,10 @@ async function renderMeeting() {
   $('mtg-head').style.display = ''; $('tabs').style.display = 'flex'; $('doc').style.display = '';
   $('mtg-title').textContent = m.title;
   $('mtg-meta').style.cssText = '';
-  $('mtg-meta').textContent =
-    `${m.created.slice(0, 16).replace('T', ' ')}${t('metaSep')}${m.duration || t('notTranscribed')}${t('metaSep')}${sourceLabel(m.source)}`;
+  let metaLine = `${m.created.slice(0, 16).replace('T', ' ')}${t('metaSep')}${m.duration || t('notTranscribed')}${t('metaSep')}${sourceLabel(m.source)}`;
+  if (m.language && !['auto', 'imported', ''].includes(m.language))
+    metaLine += `${t('metaSep')}${t('detected', m.language)}`;
+  $('mtg-meta').textContent = metaLine;
   const tabs = $('tabs'); tabs.innerHTML = '';
   const addTab = (key, label) => {
     const tab = document.createElement('div');
@@ -1289,6 +1308,17 @@ async function bootstrap() {
         body: JSON.stringify({ whisper_model: e.target.value }),
       });
       toast(t('modelSwitched', e.target.value));
+    } catch (err) { toast(t('switchFailed') + err.message, 6000); }
+  };
+  $('tlang-select').value = cfg.language || 'auto';
+  $('tlang-select').onchange = async e => {
+    try {
+      await api('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: e.target.value }),
+      });
+      const opt = e.target.options[e.target.selectedIndex];
+      toast(t('tlangSwitched', opt ? opt.textContent : e.target.value));
     } catch (err) { toast(t('switchFailed') + err.message, 6000); }
   };
   await loadMeetings();

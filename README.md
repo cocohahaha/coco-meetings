@@ -97,10 +97,15 @@ echo "alias coco=\"$(pwd)/bin/coco\"" >> ~/.zshrc
 
 - `whisper_model` — `turbo` (default, fast) or `large` (most accurate). Also switchable
   in the top bar of the web UI.
-- `language` — `auto` (default; detect per file) or an ISO code like `en`, `fr`, `zh`
-  to force a language.
+- `language` : `auto` (default; Whisper detects the spoken language per file) or an ISO
+  code like `en`, `fr`, `zh` to force one. Also selectable in the top bar of the web UI,
+  and the detected language is shown on each transcript. Forcing the known language is
+  more reliable than auto-detect for short or noisy clips.
 - `initial_prompt_extra` — recurring names/brands/terms (any language) injected into the
   transcription prompt to improve recognition.
+- `beam_size` : `0` (default, greedy decoding, fastest) or `5` for beam search, which is
+  more accurate at the cost of speed. The single biggest accuracy lever once you are on
+  the `large` model.
 - `auto_memory` — auto-extract long-term memory after each transcription (default true).
 - `claude_extra_args` — extra args for the claude CLI, e.g. `["--model","claude-sonnet-4-6"]`.
 
