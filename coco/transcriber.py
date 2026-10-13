@@ -1,4 +1,8 @@
-"""Local Whisper transcription (mlx-whisper, native Apple Silicon acceleration)."""
+"""Transcription: local Whisper (mlx-whisper, Apple Silicon) or Bailian cloud ASR.
+
+The asr_backend config picks the route; "auto" uses the local model when this
+machine can run it and falls back to the cloud otherwise.
+"""
 from __future__ import annotations
 
 import datetime as dt
@@ -7,6 +11,14 @@ from pathlib import Path
 
 from .config import load_config, resolve_model_repo, setup_hf_endpoint
 from .library import Meeting
+
+
+def local_asr_available() -> bool:
+    """mlx-whisper only runs on Apple Silicon; elsewhere the cloud is the only route."""
+    import importlib.util
+    import platform
+    return (platform.system() == "Darwin" and platform.machine() == "arm64"
+            and importlib.util.find_spec("mlx_whisper") is not None)
 
 
 def _fmt_ts(seconds: float) -> str:
@@ -21,6 +33,12 @@ def transcribe_file(audio: Path, model: str | None = None,
                     progress=lambda msg: None) -> dict:
     """Transcribe an audio/video file -> {text, segments, duration, model}."""
     cfg = load_config()
+    backend = cfg.get("asr_backend", "auto")
+    if backend == "auto":
+        backend = "local" if local_asr_available() else "cloud"
+    if backend == "cloud":
+        from .cloud_asr import transcribe_file_cloud
+        return transcribe_file_cloud(audio, language=language, progress=progress)
     model = model or cfg["whisper_model"]
     # language: explicit arg > config; "auto" / empty means let Whisper detect it
     lang = language if language is not None else cfg.get("language")

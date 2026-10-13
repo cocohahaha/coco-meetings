@@ -5,19 +5,36 @@ same language as the meeting transcript, so a French meeting yields a French
 report, an English meeting an English one, and so on.
 """
 
+# Machine transcripts carry no speaker labels, so "who said what" is inherently a
+# guess. This rule is appended to every AI prompt: a wrong attribution is worse
+# than none (users kept seeing statements pinned on the wrong person).
+ATTRIBUTION_RULE = (
+    "Attribution discipline: the transcript has no reliable speaker labels, so never guess "
+    "or infer who said something. Attribute a statement to a named person only when the "
+    "transcript itself makes the speaker explicit (they introduce themselves, or are "
+    "addressed by name right before speaking); otherwise write \"a participant\" (or the "
+    "equivalent in the meeting's language). A wrong attribution is worse than none."
+)
+
 # Each template: stable id -> localized label/desc (en/fr) + a language-neutral prompt.
 TEMPLATES = {
     "minutes": {
         "label": {"en": "Minutes", "fr": "Compte rendu"},
-        "desc": {"en": "Structured minutes: topics, key points, decisions, to-dos",
-                 "fr": "Compte rendu structuré : sujets, points clés, décisions, actions"},
+        "desc": {"en": "Concise minutes: overall summary, topics, decisions, stated actions",
+                 "fr": "Compte rendu concis : synthèse globale, sujets, décisions, actions"},
         "prompt": (
-            "Produce structured meeting minutes based on the transcript, including:\n"
-            "1. Meeting topic and participants (infer what you reasonably can; do not invent)\n"
-            "2. Discussion points grouped by topic\n"
-            "3. Decisions and conclusions reached\n"
-            "4. Action items (owner, deadline; mark \"unspecified\" if not stated)\n"
-            "Cite key quotes with their timestamps."
+            "Produce concise meeting minutes focused on the overall picture, not on who "
+            "said what:\n"
+            "1. Summary: 3-5 sentences on what the meeting was about and where it landed\n"
+            "2. Discussion by topic: synthesize the collective view per topic; do not "
+            "attribute opinions to individuals unless the transcript names the speaker "
+            "explicitly\n"
+            "3. Decisions actually reached (omit this section if none were made)\n"
+            "4. Action items explicitly stated: task, owner (\"unspecified\" unless a "
+            "person explicitly took or was assigned it), deadline (\"unspecified\" if not "
+            "stated) — never infer owners or deadlines\n"
+            "Keep the whole output compact — prefer ten solid lines over thirty padded "
+            "ones. Cite timestamps only for decisions and commitments."
         ),
     },
     "actions": {
@@ -26,8 +43,12 @@ TEMPLATES = {
                  "fr": "Actions uniquement : tâche, responsable, échéance, dépendances"},
         "prompt": (
             "Extract action items only, as a table: Task | Owner | Deadline | Dependencies/Notes.\n"
-            "If an owner or deadline is not explicitly stated in the transcript, mark it "
-            "\"unspecified\"; do not guess.\n"
+            "Include only tasks explicitly stated or accepted in the transcript; do not turn "
+            "general discussion into tasks. A short reliable list beats an exhaustive "
+            "speculative one.\n"
+            "Owner must be a person the transcript explicitly shows taking or receiving the "
+            "task; otherwise mark it \"unspecified\" — never guess from context who would "
+            "logically own it. Same for deadlines.\n"
             "End with an \"Open / unowned\" section: things raised that no one took on."
         ),
     },
@@ -122,7 +143,8 @@ BRIEF_PROMPT = (
     "2. All action items consolidated (ordered by urgency)\n"
     "3. Strategic insight: read together, what does today's information tell me\n"
     "4. One reflection: where I could have communicated better today\n"
-    "Be concise and self-archivable. Answer in the same language as the meeting content."
+    "Be concise and self-archivable. Answer in the same language as the meeting content.\n"
+    + ATTRIBUTION_RULE
 )
 
 LONGTERM_PROMPT = (
@@ -140,7 +162,8 @@ LONGTERM_PROMPT = (
     "4. When new meetings update a person/project (e.g. a changed position), keep the trail: "
     "\"said X [old meeting] -> now says Y [new meeting]\"\n"
     "5. Only record facts grounded in the source; do not speculate; drop small talk and "
-    "one-off details\n"
+    "one-off details. Never guess who said something: record a statement under a person's "
+    "name only when the source makes the speaker explicit\n"
     "6. Keep the whole file under ~600 lines; compress stale, low-value entries but never lose "
     "an unfulfilled commitment\n"
     "Output the full updated file, starting with \"# Long-term memory\", with no explanation. "
@@ -159,7 +182,8 @@ TRACK_PROMPT = (
     "time they were set aside\n"
     "Base everything on transcript evidence; do not invent. Where there is only a single-meeting "
     "thread with no basis for cross-meeting comparison, say so. Answer in the same language as "
-    "the meeting content."
+    "the meeting content.\n"
+    + ATTRIBUTION_RULE
 )
 
 CHAT_SYSTEM = (
@@ -167,5 +191,6 @@ CHAT_SYSTEM = (
     "transcripts and global memory provided.\n"
     "Principles: rely only on transcript evidence and never fabricate; cite key quotes with "
     "timestamps; when something is not covered, say \"the transcript doesn't mention this\"; "
-    "lead with the conclusion, then the evidence. Answer in the same language as the question."
+    "lead with the conclusion, then the evidence. Answer in the same language as the question.\n"
+    + ATTRIBUTION_RULE
 )

@@ -390,12 +390,14 @@ def api_delete_brief(date: str):
 @app.get("/api/config")
 def api_config():
     cfg = load_config()
-    return {"whisper_model": cfg["whisper_model"], "language": cfg.get("language", "auto")}
+    return {"whisper_model": cfg["whisper_model"], "language": cfg.get("language", "auto"),
+            "asr_backend": cfg.get("asr_backend", "auto")}
 
 
 class ConfigBody(BaseModel):
     whisper_model: str | None = None
     language: str | None = None
+    asr_backend: str | None = None  # auto | local | cloud
 
 
 def _valid_lang(v: str) -> bool:
@@ -413,9 +415,14 @@ def api_config_save(body: ConfigBody):
         if not _valid_lang(body.language):
             _err(ValueError("Language must be 'auto' or an ISO code like en, fr, zh"))
         cfg["language"] = body.language
+    if body.asr_backend is not None:
+        if body.asr_backend not in ("auto", "local", "cloud"):
+            _err(ValueError("asr_backend must be auto, local or cloud"))
+        cfg["asr_backend"] = body.asr_backend
     save_config(cfg)
     return {"ok": True, "whisper_model": cfg["whisper_model"],
-            "language": cfg.get("language", "auto")}
+            "language": cfg.get("language", "auto"),
+            "asr_backend": cfg.get("asr_backend", "auto")}
 
 
 class TranscriptBody(BaseModel):
@@ -474,6 +481,119 @@ def api_proofread(mid: str):
         return {"content": content}
     except (LookupError, ai.AIError) as e:
         _err(e)
+
+
+# ---------- global corrections from the chat panel ----------
+# Two-step: preview returns the edit plan with per-replacement hit counts and a
+# token; nothing is written until the user confirms and apply is called.
+
+PENDING_EDITS: dict[str, dict] = {}  # token -> edit plan awaiting confirmation
+
+
+class EditPreviewBody(BaseModel):
+    instruction: str
+    id: str = ""  # currently open meeting: gives the model real text to quote from
+
+
+class EditApplyBody(BaseModel):
+    token: str
+
+
+def _edit_target_files(scope: str) -> list[Path]:
+    """Files a replacement applies to. Memory files are always included: a wrong
+    name may live there too. An unknown meeting id just means fewer targets."""
+    ensure_dirs()
+    files = [MEMORY_FILE, LONGTERM_FILE]
+    if scope == "all":
+        for m in list_meetings():
+            if m.transcript_md.exists():
+                files.append(m.transcript_md)
+            files.extend(m.reports())
+    else:
+        try:
+            m = find_meeting(scope)
+        except LookupError:
+            return [f for f in files if f.exists()]
+        if m.transcript_md.exists():
+            files.append(m.transcript_md)
+        files.extend(m.reports())
+    return [f for f in files if f.exists()]
+
+
+@app.post("/api/edit/preview")
+def api_edit_preview(body: EditPreviewBody):
+    if not body.instruction.strip():
+        _err(ValueError("Empty instruction"))
+    mtg = None
+    if body.id:
+        try:
+            mtg = find_meeting(body.id)
+        except LookupError:
+            mtg = None
+    try:
+        plan = ai.propose_edits(body.instruction, mtg)
+    except ai.AIError as e:
+        _err(e)
+    preview = []
+    for r in plan["replacements"]:
+        hits = files = 0
+        for f in _edit_target_files(r["scope"]):
+            n = f.read_text(encoding="utf-8").count(r["find"])
+            if n:
+                files += 1
+                hits += n
+        preview.append({**r, "files": files, "hits": hits})
+    token = uuid.uuid4().hex[:12]
+    while len(PENDING_EDITS) >= 16:  # bound the pending map
+        PENDING_EDITS.pop(next(iter(PENDING_EDITS)))
+    PENDING_EDITS[token] = plan
+    return {"token": token, "note": plan["note"], "replacements": preview,
+            "memory_append": plan["memory_append"], "hotwords": plan["hotwords"]}
+
+
+@app.post("/api/edit/apply")
+def api_edit_apply(body: EditApplyBody):
+    plan = PENDING_EDITS.pop(body.token, None)
+    if plan is None:
+        _err(LookupError("This correction expired; ask for it again"), 404)
+    # group replacements per file so each file is read, backed up and written once
+    per_file: dict[Path, list[dict]] = {}
+    for r in plan["replacements"]:
+        for f in _edit_target_files(r["scope"]):
+            per_file.setdefault(f, []).append(r)
+    files_changed, total_hits = 0, 0
+    with ai.MEMORY_LOCK:
+        for f, reps in per_file.items():
+            old = f.read_text(encoding="utf-8")
+            new = old
+            for r in reps:
+                total_hits += new.count(r["find"])
+                new = new.replace(r["find"], r["replace"])
+            if new != old:
+                # .md.bak, not .bak.md: a .bak.md inside reports/ would show up
+                # as a report in the UI (reports() globs *.md)
+                f.with_name(f.name + ".bak").write_text(old, encoding="utf-8")
+                f.write_text(new, encoding="utf-8")
+                files_changed += 1
+        if plan["memory_append"]:
+            ensure_dirs()
+            cur = MEMORY_FILE.read_text(encoding="utf-8")
+            MEMORY_FILE.write_text(cur.rstrip() + "\n" + plan["memory_append"] + "\n",
+                                   encoding="utf-8")
+    hotwords_added = []
+    if plan["hotwords"]:
+        cfg = load_config()
+        extra = cfg.get("initial_prompt_extra", "")
+        for h in plan["hotwords"]:
+            if h not in extra:
+                extra = f"{extra}, {h}" if extra else h
+                hotwords_added.append(h)
+        if hotwords_added:
+            cfg["initial_prompt_extra"] = extra
+            save_config(cfg)
+    return {"ok": True, "files_changed": files_changed, "hits": total_hits,
+            "memory_appended": bool(plan["memory_append"]),
+            "hotwords_added": hotwords_added}
 
 
 # ---------- downloads (.md export) ----------

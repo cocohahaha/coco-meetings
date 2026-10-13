@@ -225,6 +225,75 @@ def track(focus: str = "") -> "tuple[str, str]":
     return str(path), content
 
 
+EDIT_PLAN_PROMPT = (
+    "You are coco's correction assistant. The user describes, in plain language, a fix to "
+    "apply across their meeting library: a misrecognized name or term, wrong wording in "
+    "minutes, or a fact to remember. Output ONLY a JSON object (no markdown fence, no "
+    "commentary) with exactly this shape:\n"
+    '{"replacements": [{"find": "<exact literal text>", "replace": "<corrected text>", '
+    '"scope": "all"}],\n'
+    ' "memory_append": "<0-3 markdown bullet lines for global memory: name mappings, '
+    'canonical spellings; or empty string>",\n'
+    ' "hotwords": ["<correct spellings of proper nouns, to bias future transcription>"],\n'
+    ' "note": "<one short sentence for the user, in the user\'s language>"}\n'
+    "Rules:\n"
+    "1. find must be an exact literal substring visible in the material below (or an "
+    "obvious ASR variant the user cites); never regex, never approximate\n"
+    "2. Prefer several precise replacements (each misspelling variant separately) over one "
+    "broad one; never use a find string so short it would hit unrelated text\n"
+    "3. scope is \"all\" (whole library) or a meeting id when the fix belongs to one "
+    "meeting only\n"
+    "4. If the instruction is a question rather than a correction, return an empty "
+    "replacements list and explain in note\n"
+    "5. memory_append lines must be durable facts (e.g. \"- 'Li Zong' in transcripts = "
+    "黎总, CFO at client X\"), not restatements of the edit"
+)
+
+
+def propose_edits(instruction: str, mtg: "Meeting | None" = None) -> dict:
+    """Turn a plain-language correction into a structured edit plan (not applied here)."""
+    material = _memory_block()
+    if mtg is not None:
+        t = mtg.transcript_text()
+        if t:
+            material += f"<meeting id=\"{mtg.id}\">\n{t[:40_000]}\n</meeting>\n\n"
+    prompt = (f"{EDIT_PLAN_PROMPT}\n\n{material}"
+              f"<instruction>\n{instruction}\n</instruction>")
+    out = run_claude(prompt, timeout=600)
+    plan = _parse_json_object(out)
+    reps = []
+    for r in plan.get("replacements") or []:
+        find = str(r.get("find") or "")
+        if not find.strip() or len(find.strip()) < 2:
+            continue  # too short / empty: would hit unrelated text
+        reps.append({"find": find, "replace": str(r.get("replace") or ""),
+                     "scope": str(r.get("scope") or "all")})
+    return {
+        "replacements": reps,
+        "memory_append": str(plan.get("memory_append") or "").strip(),
+        "hotwords": [str(h).strip() for h in (plan.get("hotwords") or []) if str(h).strip()],
+        "note": str(plan.get("note") or "").strip(),
+    }
+
+
+def _parse_json_object(out: str) -> dict:
+    """Parse a JSON object from model output, tolerating markdown fences around it."""
+    import json as _json
+    s = out.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1].rsplit("```", 1)[0]
+    start, end = s.find("{"), s.rfind("}")
+    if start < 0 or end <= start:
+        raise AIError(f"Correction plan is not valid JSON: {out[:200]}")
+    try:
+        obj = _json.loads(s[start:end + 1])
+    except _json.JSONDecodeError as e:
+        raise AIError(f"Correction plan is not valid JSON ({e}): {out[:200]}")
+    if not isinstance(obj, dict):
+        raise AIError("Correction plan is not a JSON object")
+    return obj
+
+
 def _dedupe_title(content: str) -> str:
     """If the model output starts with its own top-level heading, drop it so it does not
     duplicate the canonical title we prepend."""

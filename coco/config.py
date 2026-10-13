@@ -43,6 +43,14 @@ DEFAULTS = {
     "claude_extra_args": [],    # e.g. ["--model", "claude-sonnet-4-6"]
     "auto_memory": True,        # auto-extract long-term memory after each transcription
 
+    # Transcription backend: "local" (mlx-whisper), "cloud" (Alibaba Bailian /
+    # DashScope), or "auto" = local when this machine can run it, cloud otherwise.
+    "asr_backend": "auto",
+    "cloud_asr_model": "paraformer-realtime-v2",
+    "dashscope_api_key": "",    # empty = use the DASHSCOPE_API_KEY env var
+    "cloud_language_hints": ["zh", "en"],  # bias when language is "auto" (cloud only)
+    "vocabulary_id": "",        # Bailian hotword vocabulary for cloud transcription
+
     "port": 8765,
     "hf_endpoint": "",          # leave empty = use default; set a mirror URL if needed
 }

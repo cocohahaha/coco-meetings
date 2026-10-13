@@ -1,9 +1,13 @@
 # coco — local meeting recording / transcription / AI analysis
 
-Record or import audio, transcribe it locally with Whisper, then turn it into AI
-analysis reports, daily briefs and cross-meeting tracking. Everything stays on your
-machine: transcription runs locally, and the AI layer calls the `claude` CLI you
-already have, so there is no extra API key to manage and no audio leaves your laptop.
+Record or import audio, transcribe it with Whisper (locally) or Alibaba Bailian
+(cloud), then turn it into AI analysis reports, daily briefs and cross-meeting
+tracking. The AI layer calls the `claude` CLI you already have.
+
+In the default local mode everything stays on your machine and no audio leaves your
+laptop. Machines that cannot run the local model (Intel Mac, Windows, weak hardware)
+can switch transcription to the cloud backend instead — audio is then sent to Alibaba
+Cloud under your Bailian account (see "Cloud transcription" below).
 
 The interface is bilingual (English / Français, switch in the top bar). Transcription
 auto-detects the spoken language, and every AI analysis answers in the language of the
@@ -12,8 +16,10 @@ one.
 
 ## Requirements
 
-- **Apple Silicon Mac** (M1 or later). Transcription uses `mlx-whisper`, which is built
-  for Apple Silicon; it will not run on Intel Macs, Windows or Linux.
+- **Apple Silicon Mac** (M1 or later) for local transcription: `mlx-whisper` is built
+  for Apple Silicon. On Intel Macs / Windows / Linux, or on machines too weak to run
+  it comfortably, use cloud transcription instead (see below) — everything else works
+  the same.
 - **ffmpeg** — `brew install ffmpeg`
 - **Claude Code CLI** — needed for the AI features (reports, chat, daily brief,
   tracking). Install and log in once: https://docs.claude.com/claude-code
@@ -55,6 +61,11 @@ one. Transcripts, reports and daily briefs all download as `.md`.
 - **Analysis reports** — pick a template and generate a report from the transcript.
 - **Chat** — ask anything about a meeting; tick "across all meetings" to ask
   cross-session questions (how someone's position changed, who committed to what).
+- **Correction mode (in the chat panel)** — describe a fix in plain language ("'Li
+  Zong' is actually 黎总, fix it everywhere") and coco proposes a global find/replace
+  plan across transcripts, reports and memory. Nothing is written until you confirm;
+  every touched file is backed up to `.bak` first, the mapping is added to global
+  memory, and the corrected names feed future transcriptions.
 - **Daily brief** — consolidate a day's meetings into one brief, with history per date.
 - **Cross-meeting tracking** — follow-through on commitments, shifts in position, and
   recurring unresolved questions, optionally focused on a person/project/client.
@@ -93,8 +104,39 @@ Optional alias:
 echo "alias coco=\"$(pwd)/bin/coco\"" >> ~/.zshrc
 ```
 
+## Cloud transcription (Alibaba Bailian)
+
+For machines that cannot run `mlx-whisper`, transcription can go through Alibaba
+Bailian (DashScope) instead — the same account that powers the company `claude` proxy.
+Analysis still runs through the `claude` CLI; only the audio-to-text step changes.
+
+1. Get a Bailian API key and expose it: `export DASHSCOPE_API_KEY=sk-…` (or set
+   `dashscope_api_key` in `coco.config.json`).
+2. Pick "Model: cloud (Bailian)" in the top bar (or set `asr_backend` to `cloud`).
+   The default `asr_backend: auto` uses the local model when the machine has one and
+   falls back to the cloud otherwise, so on a Windows/Intel machine with a key set,
+   things just work.
+
+Details:
+
+- Model: `paraformer-realtime-v2` (config `cloud_asr_model`). Audio is converted to
+  16 kHz mono mp3 with ffmpeg and streamed over the DashScope SDK — no public URL or
+  OSS bucket involved. Sentence timestamps are kept, so transcripts look identical to
+  local ones.
+- Languages: zh / en / ja / yue / ko. When `language` is `auto`, recognition is biased
+  by `cloud_language_hints` (default `["zh","en"]`). For other languages (fr, de, …)
+  use the local backend.
+- Hotwords: `initial_prompt_extra` only helps the local model. For the cloud model,
+  create a hotword vocabulary in the Bailian console and set its id as
+  `vocabulary_id`.
+- Privacy: in cloud mode the meeting audio is uploaded to Alibaba Cloud under your
+  Bailian account. Billing is per audio duration — see the Bailian console pricing
+  page.
+
 ## Configuration (`coco config`)
 
+- `asr_backend` — `auto` (default: local when available, else cloud), `local`, or
+  `cloud`. Also switchable in the top bar of the web UI.
 - `whisper_model` — `turbo` (default, fast) or `large` (most accurate). Also switchable
   in the top bar of the web UI.
 - `language` : `auto` (default; Whisper detects the spoken language per file) or an ISO

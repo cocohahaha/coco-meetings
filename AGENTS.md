@@ -1,22 +1,26 @@
 # Agent setup guide
 
 This file is for a coding agent (Claude Code or similar) asked to set up and run **coco**
-on the user's machine. Follow it top to bottom. coco is a fully local meeting tool:
-record/import audio → local Whisper transcription → AI analysis via the user's `claude`
-CLI. No data leaves the machine; there is no API key to configure.
+on the user's machine. Follow it top to bottom. coco is a meeting tool: record/import
+audio → transcription (local Whisper, or Alibaba Bailian cloud) → AI analysis via the
+user's `claude` CLI. In local mode no data leaves the machine.
 
-## 0. Hard constraint — check first
+## 0. Platform check — decides the transcription backend
 
-coco transcribes with `mlx-whisper`, which **only runs on Apple Silicon Macs (M1+)**.
-Before doing anything, confirm the platform:
+Local transcription uses `mlx-whisper`, which **only runs on Apple Silicon Macs (M1+)**:
 
 ```bash
-uname -m   # must print "arm64"
+uname -m   # "arm64" on macOS = local transcription available
 ```
 
-If it is not `arm64` (Intel Mac, Windows, Linux), stop and tell the user: coco's
-transcription engine will not run here. Do not try to swap in another engine unless the
-user explicitly asks.
+- `arm64` on macOS: nothing to configure; the default `asr_backend: auto` uses the
+  local model.
+- Anything else (Intel Mac, Windows, Linux) or a machine too weak for local models:
+  use the cloud backend. Ask the user for the company's Bailian API key, then either
+  `export DASHSCOPE_API_KEY=sk-…` or `./bin/coco config dashscope_api_key sk-…`.
+  With `asr_backend: auto` (default) the cloud is used automatically when the local
+  model is unavailable. Tell the user that in cloud mode meeting audio is uploaded to
+  Alibaba Cloud under that account.
 
 ## 1. Verify prerequisites, install what is missing
 
@@ -81,7 +85,8 @@ For an end-to-end check, ask the user for a short audio/video file and run
   recordings and notes and are git-ignored. Never commit them, never move them out of
   the machine.
 - **Config**: `./bin/coco config` prints current settings; `./bin/coco config <key> <value>`
-  changes one. Useful keys: `whisper_model` (turbo/large), `language`, `claude_extra_args`.
+  changes one. Useful keys: `asr_backend` (auto/local/cloud), `whisper_model`
+  (turbo/large), `language`, `dashscope_api_key`, `claude_extra_args`.
 - **Logs**: `logs/coco.log` when started via `run.sh`.
 - **System audio**: capturing the other side of a call needs a virtual audio device
   (e.g. BlackHole); then `./bin/coco devices` and set `audio_device`.
